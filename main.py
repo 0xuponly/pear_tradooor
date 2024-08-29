@@ -111,7 +111,7 @@ class ControlPanel(QWidget):
         self.start_button = QPushButton("Chart")
         layout.addWidget(self.start_button)
 
-        self.account_info_label = QLabel("|  Account Balance: $0.00 | Available Margin: $0.00  |\n ")
+        self.account_info_label = QLabel("Account Balance: $0.00 | Available Margin: $0.00")
         layout.addWidget(self.account_info_label)
 
         self.positions_label = QLabel("  Open Positions:")
@@ -288,9 +288,9 @@ class ControlPanel(QWidget):
     def update_account_info(self):
         total_equity, available_balance = self.get_account_info()
         if total_equity is not None and available_balance is not None:
-            self.account_info_label.setText(f"Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}")
+            self.account_info_label.setText(f"  Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}")
         else:
-            self.account_info_label.setText("Account Balance: N/A | Available Margin: N/A")
+            self.account_info_label.setText("  Account Balance: N/A | Available Margin: N/A")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -309,7 +309,10 @@ class MainWindow(QMainWindow):
         self.control_panel.close_all_button.clicked.connect(self.close_all_positions)
 
         # Initialize trading dialog with default symbols
-        self.trading_dialog = TradingDialog(self, "BTCUSDT", "ETHUSDT")
+        self.symbol1 = "BTCUSDT"
+        self.symbol2 = "ETHUSDT"
+        self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
+        self.trading_dialog.show()
 
         self.fig = None
         self.ax = None
@@ -336,12 +339,12 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def start_chart(self):
-        symbol1 = self.control_panel.symbol1_input.text().upper() or "BTCUSDT"
-        symbol2 = self.control_panel.symbol2_input.text().upper() or "ETHUSDT"
+        symbol1 = self.control_panel.symbol1_input.text().upper() or self.symbol1
+        symbol2 = self.control_panel.symbol2_input.text().upper() or self.symbol2
 
         if self.validate_symbols(symbol1, symbol2):
-            self.symbol1 = symbol1  # Add this line
-            self.symbol2 = symbol2  # Add this line
+            self.symbol1 = symbol1
+            self.symbol2 = symbol2
             self.create_chart(symbol1, symbol2)
             # Update the trading dialog with new symbols
             self.trading_dialog.update_symbols(symbol1, symbol2)
@@ -367,9 +370,6 @@ class MainWindow(QMainWindow):
         self.ani = FuncAnimation(self.fig, self.update_chart, interval=UPDATE_INTERVAL, 
                                  blit=False, save_count=100)
         self.canvas.draw()
-
-        # Show the trading dialog
-        self.trading_dialog.show()
 
     def update_chart(self, frame):
         pair_price = calculate_pair_price(self.symbol1, self.symbol2)
