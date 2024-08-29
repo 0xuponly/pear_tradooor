@@ -111,6 +111,9 @@ class ControlPanel(QWidget):
         self.start_button = QPushButton("Chart")
         layout.addWidget(self.start_button)
 
+        self.account_info_label = QLabel("|  Account Balance: $0.00 | Available Margin: $0.00  |\n ")
+        layout.addWidget(self.account_info_label)
+
         self.positions_label = QLabel("  Open Positions:")
         layout.addWidget(self.positions_label)
 
@@ -157,6 +160,8 @@ class ControlPanel(QWidget):
         self.symbol2_input.returnPressed.connect(self.start_button.click)
 
     def update_positions(self, positions):
+        self.update_account_info()
+
         # Clear the existing layout
         while self.positions_layout.count():
             item = self.positions_layout.takeAt(0)
@@ -193,7 +198,6 @@ class ControlPanel(QWidget):
                             upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
                             upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
                             combined_upnl = upnl1 + upnl2
-                            
                             # Calculate percentage UPNL
                             order_size = self.get_order_size()
                             upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
@@ -265,6 +269,28 @@ class ControlPanel(QWidget):
             self.parent().trading_dialog.close_position(index)
         else:
             QMessageBox.warning(self, "Error", "Trading dialog not initialized.")
+
+    def get_account_info(self):
+        try:
+            account_info = self.session.get_wallet_balance(accountType="UNIFIED")
+            if account_info['retCode'] == 0:
+                wallet_info = account_info['result']['list'][0]
+                total_equity = float(wallet_info['totalEquity'])
+                available_balance = float(wallet_info.get('availableBalance', wallet_info['totalWalletBalance']))
+                return total_equity, available_balance
+            else:
+                logger.error(f"Error getting account info: {account_info['retMsg']}")
+                return None, None
+        except Exception as e:
+            logger.error(f"Error getting account info: {e}")
+            return None, None
+
+    def update_account_info(self):
+        total_equity, available_balance = self.get_account_info()
+        if total_equity is not None and available_balance is not None:
+            self.account_info_label.setText(f"Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}")
+        else:
+            self.account_info_label.setText("Account Balance: N/A | Available Margin: N/A")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -365,21 +391,22 @@ class MainWindow(QMainWindow):
                 logger.warning("Unable to get current price: pair_price is empty")
             
             # Plot arrows for positions
-            for position in positions:
-                if 'timestamp' in position:
-                    timestamp = datetime.fromisoformat(position['timestamp'])
-                    if timestamp in pair_price.index:
-                        price = pair_price.loc[timestamp]
-                        if position['type'] == 'long':
-                            self.ax.annotate('↑', (timestamp, price), xytext=(0, -20), 
-                                             textcoords='offset points', ha='center', va='bottom',
-                                             color='green', fontsize=15)
-                        elif position['type'] == 'short':
-                            self.ax.annotate('↓', (timestamp, price), xytext=(0, 20), 
-                                             textcoords='offset points', ha='center', va='top',
-                                             color='red', fontsize=15)
-                else:
-                    logger.warning(f"Position without timestamp: {position}")
+            if positions:  # Add this check
+                for position in positions:
+                    if 'timestamp' in position:
+                        timestamp = datetime.fromisoformat(position['timestamp'])
+                        if timestamp in pair_price.index:
+                            price = pair_price.loc[timestamp]
+                            if position['type'] == 'long':
+                                self.ax.annotate('↑', (timestamp, price), xytext=(0, -20), 
+                                                 textcoords='offset points', ha='center', va='bottom',
+                                                 color='green', fontsize=15)
+                            elif position['type'] == 'short':
+                                self.ax.annotate('↓', (timestamp, price), xytext=(0, 20), 
+                                                 textcoords='offset points', ha='center', va='top',
+                                                 color='red', fontsize=15)
+                    else:
+                        logger.warning(f"Position without timestamp: {position}")
             
             self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m-%d %H:%M:%S'))
             plt.xticks(rotation=45, ha='right', color='white')
@@ -401,6 +428,7 @@ class MainWindow(QMainWindow):
             positions = self.current_position or []
         
         self.control_panel.update_positions(positions)
+        self.control_panel.update_account_info()
         
         if self.ani:
             self.ani.event_source.stop()
@@ -730,17 +758,19 @@ class TradingDialog(QDialog):
                 try:
                     self.current_position = json.load(f)
                 except json.JSONDecodeError:
-                    print("Warning: Invalid JSON in current_position.json. Setting current_position to None.")
-                    self.current_position = None
+                    print("Warning: Invalid JSON in current_position.json. Setting current_position to an empty list.")
+                    self.current_position = []
         else:
-            print("Info: current_position.json doesn't exist or is empty. Setting current_position to None.")
-            self.current_position = None
+            print("Info: current_position.json doesn't exist or is empty. Setting current_position to an empty list.")
+            self.current_position = []
+        return self.current_position  # Add this line to always return a list
 
     def update_symbols(self, symbol1, symbol2):
         self.symbol1 = symbol1
         self.symbol2 = symbol2
         symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
         symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
+
         self.setWindowTitle(f"Pear Tradooor - {symbol2_truncated}/{symbol1_truncated}")
         
         symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
