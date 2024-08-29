@@ -37,7 +37,7 @@ API_SECRET=your_api_secret_here
 
 ## Disclaimer
 
-This application is for educational purposes only. Use at your own risk. Cryptocurrency trading carries a high level of risk and may not be suitable for all investors. Trade with caution.
+This application is for educational purposes only. Use at your own risk. Cryptocurrency trading carries a high level of risk and may not be suitable for all investors. You may lose your sanity or your money, perhaps even both. Trade with caution.
 
 ## License
 
