@@ -1,66 +1,43 @@
-# Bybit Trading Bot
+# Pear Tradooor
 
-This project implements an automated trading bot for the Bybit cryptocurrency exchange.
+Pear Tradooor is a Python-based trading application for pair trading on cryptocurrency exchanges.
 
 ## Features
 
-- Connects to Bybit API
-- Implements a simple moving average crossover strategy
-- Manages orders and positions
-- Fetches historical price data
-- Provides basic risk management
-
-## Project Structure
-
-```
-bybit_trading/
-├── config/
-│   └── config.py
-├── trading_api/
-│   └── bybit_api.py
-├── trading_brain/
-│   └── strategy.py
-├── data/
-│   └── historical_data.py
-├── orders/
-│   └── order_management.py
-├── utils/
-│   └── helpers.py
-├── main.py
-├── requirements.txt
-└── README.md
-
-```
+- Real-time price chart for trading pairs
+- Long and short pair trading functionality
+- Position management
+- User-friendly GUI using PyQt5
 
 ## Installation
 
 1. Clone this repository
 2. Install dependencies:
    ```
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
-3. Set up your Bybit API credentials in `config/config.py`
+3. Set up your API credentials in a `.env` file (see Configuration section)
 
 ## Usage
 
-Run the bot with:
+Run the application with:
 
 ```
-python main.py
+python3 main.py
 ```
 
 ## Configuration
 
-Edit `config/config.py` to adjust trading parameters such as:
+Create a `.env` file in the project root and add your API credentials:
 
-- Trading pair
-- Strategy parameters
-- Risk management settings
-- yo mama
+```
+API_KEY=your_api_key_here
+API_SECRET=your_api_secret_here
+```
 
 ## Disclaimer
 
-This bot is for educational purposes only. Use at your own risk. Cryptocurrency trading carries a high level of risk and may not be suitable for all investors. You will like go insane or lose it all, possibly both. Tread with caution, nerd.
+This application is for educational purposes only. Use at your own risk. Cryptocurrency trading carries a high level of risk and may not be suitable for all investors. Trade with caution.
 
 ## License
 

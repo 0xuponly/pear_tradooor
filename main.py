@@ -8,11 +8,13 @@ import logging
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from config.config import TESTNET, UPDATE_INTERVAL
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QWidget, QLineEdit, QLabel, QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox, QComboBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QWidget, QLineEdit, QLabel, QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox, QComboBox, QSpacerItem, QSizePolicy
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.dates as mdates
 from PyQt5.QtCore import Qt, QTimer
 import json
+from PyQt5.QtGui import QPalette, QColor
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -109,7 +111,7 @@ class ControlPanel(QWidget):
         self.start_button = QPushButton("Chart")
         layout.addWidget(self.start_button)
 
-        self.positions_label = QLabel("Open Positions:")
+        self.positions_label = QLabel("  Open Positions:")
         layout.addWidget(self.positions_label)
 
         self.positions_layout = QVBoxLayout()
@@ -117,12 +119,39 @@ class ControlPanel(QWidget):
         positions_widget.setLayout(self.positions_layout)
         layout.addWidget(positions_widget)
 
+        self.combined_upnl_label = QLabel("Combined UPnL: $0.00")
+        layout.addWidget(self.combined_upnl_label)
+
         self.close_all_button = QPushButton("Close All Positions")
         layout.addWidget(self.close_all_button)
 
         self.setLayout(layout)
 
         self.connect_signals()
+        self.set_dark_theme()
+
+    def set_dark_theme(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #353535;
+                color: white;
+            }
+            QPushButton {
+                background-color: #2A82DA;
+                color: white;
+                border: none;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #3A92EA;
+            }
+            QLineEdit, QDoubleSpinBox {
+                background-color: #252525;
+                color: white;
+                border: 1px solid #555555;
+            }
+            QLabel { color: white; }
+        """)
 
     def connect_signals(self):
         self.symbol2_input.returnPressed.connect(self.start_button.click)
@@ -134,53 +163,76 @@ class ControlPanel(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
+        # Set negative spacing to reduce space between widgets
+        self.positions_layout.setSpacing(-5)  # Adjust this value as needed
+
         if positions and isinstance(positions, list):
             for index, position in enumerate(positions):
                 if isinstance(position, dict):
                     position_type = position.get('type', '').upper()
-                    symbols = [key for key in position.keys() if key != 'type']
+                    timestamp = position.get('timestamp', '')
+                    symbols = [key for key in position.keys() if key not in ['type', 'timestamp']]
                     if len(symbols) >= 2:
                         symbol1, symbol2 = symbols[:2]
-                        qty1 = position[symbol1].get('qty', 0)
-                        qty2 = position[symbol2].get('qty', 0)
-                        entry_price1 = position[symbol1].get('entry_price', 0)
-                        entry_price2 = position[symbol2].get('entry_price', 0)
-                        
-                        # Calculate dollar values
-                        dollar_value1 = qty1 * entry_price1
-                        dollar_value2 = qty2 * entry_price2
-                        average_dollar_value = (dollar_value1 + dollar_value2) / 2
-                        
-                        # Calculate combined UPNL
-                        current_price1 = self.get_current_price(symbol1)
-                        current_price2 = self.get_current_price(symbol2)
-                        upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if position[symbol1]['side'] == 'Sell' else 1)
-                        upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if position[symbol2]['side'] == 'Sell' else 1)
-                        combined_upnl = upnl1 + upnl2
-                        
-                        # Calculate percentage UPNL
-                        order_size = self.get_order_size()
-                        upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
-                        
-                        # Truncate symbols
-                        symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-                        symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-                        
-                        position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
-                        
-                        position_widget = QWidget()
-                        position_layout = QHBoxLayout(position_widget)
-                        position_label = QLabel(position_text)
-                        position_layout.addWidget(position_label)
-                        
-                        close_button = QPushButton("Close")
-                        close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
-                        position_layout.addWidget(close_button)
-                        
-                        self.positions_layout.addWidget(position_widget)
+                        pos1 = position.get(symbol1, {})
+                        pos2 = position.get(symbol2, {})
+                        if isinstance(pos1, dict) and isinstance(pos2, dict):
+                            qty1 = pos1.get('qty', 0)
+                            qty2 = pos2.get('qty', 0)
+                            entry_price1 = pos1.get('entry_price', 0)
+                            entry_price2 = pos2.get('entry_price', 0)
+                            
+                            # Calculate dollar values
+                            dollar_value1 = qty1 * entry_price1
+                            dollar_value2 = qty2 * entry_price2
+                            average_dollar_value = (dollar_value1 + dollar_value2) / 2
+                            
+                            # Calculate combined UPNL
+                            current_price1 = self.get_current_price(symbol1)
+                            current_price2 = self.get_current_price(symbol2)
+                            upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
+                            upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
+                            combined_upnl = upnl1 + upnl2
+                            
+                            # Calculate percentage UPNL
+                            order_size = self.get_order_size()
+                            upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
+                            
+                            # Truncate symbols
+                            symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
+                            symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
+                            
+                            position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
+                            
+                            position_widget = QWidget()
+                            position_layout = QHBoxLayout(position_widget)
+                            position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
+                            position_label = QLabel(position_text)
+                            position_layout.addWidget(position_label)
+                            
+                            close_button = QPushButton("Close")
+                            close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
+                            position_layout.addWidget(close_button)
+                            
+                            self.positions_layout.addWidget(position_widget)
         else:
-            no_positions_label = QLabel("No open positions")
+            no_positions_label = QLabel("- - - - -")
             self.positions_layout.addWidget(no_positions_label)
+
+        # Calculate and display combined UPnL
+        combined_upnl = 0
+        for position in positions:
+            if isinstance(position, dict):
+                for symbol, pos_data in position.items():
+                    if symbol not in ['type', 'timestamp']:
+                        if isinstance(pos_data, dict):
+                            current_price = self.get_current_price(symbol)
+                            entry_price = pos_data.get('entry_price', 0)
+                            qty = pos_data.get('qty', 0)
+                            side_multiplier = -1 if pos_data['side'] == 'Sell' else 1
+                            upnl = (current_price - entry_price) * qty * side_multiplier
+                            combined_upnl += upnl
+        self.combined_upnl_label.setText(f"  Total UPnL: ${combined_upnl:.2f}")
 
         # Force update of the layout
         self.positions_label.updateGeometry()
@@ -262,6 +314,8 @@ class MainWindow(QMainWindow):
         symbol2 = self.control_panel.symbol2_input.text().upper() or "ETHUSDT"
 
         if self.validate_symbols(symbol1, symbol2):
+            self.symbol1 = symbol1  # Add this line
+            self.symbol2 = symbol2  # Add this line
             self.create_chart(symbol1, symbol2)
             # Update the trading dialog with new symbols
             self.trading_dialog.update_symbols(symbol1, symbol2)
@@ -281,31 +335,63 @@ class MainWindow(QMainWindow):
 
         self.fig, self.ax = plt.subplots(figsize=(8, 5))
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color: #353535;")
         self.layout.addWidget(self.canvas)
 
         self.ani = FuncAnimation(self.fig, self.update_chart, interval=UPDATE_INTERVAL, 
-                                 fargs=(symbol1, symbol2), save_count=100)
+                                 blit=False, save_count=100)
         self.canvas.draw()
 
         # Show the trading dialog
         self.trading_dialog.show()
 
-    def update_chart(self, frame, symbol1, symbol2):
-        pair_price = calculate_pair_price(symbol1, symbol2)
-        if pair_price is not None:
+    def update_chart(self, frame):
+        pair_price = calculate_pair_price(self.symbol1, self.symbol2)
+        positions = self.trading_dialog.current_position if hasattr(self, 'trading_dialog') else []
+        if pair_price is not None and not pair_price.empty:
             self.ax.clear()
-            self.ax.plot(pair_price.index, pair_price.values)
-            symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-            symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-            self.ax.set_title(f"{symbol2_truncated}/{symbol1_truncated} Pear Price")
-            self.ax.set_xlabel("Time")
-            self.ax.set_ylabel("Pear Price")
+            self.ax.plot(pair_price.index, pair_price.values, color='#2A82DA')
+            symbol1_truncated = self.symbol1[:-4] if self.symbol1.endswith(('USDT', 'USDC')) else self.symbol1
+            symbol2_truncated = self.symbol2[:-4] if self.symbol2.endswith(('USDT', 'USDC')) else self.symbol2
+            self.ax.set_title(f"{symbol2_truncated}/{symbol1_truncated} Pear Price", color='white')
+            self.ax.set_xlabel("Time", color='white')
+            self.ax.set_ylabel("Pear Price", color='white')
+            
+            # Add horizontal dotted line at current price
+            try:
+                current_price = pair_price.iloc[0]
+                self.ax.axhline(y=current_price, color='white', linestyle=':', linewidth=0.5)
+            except IndexError:
+                logger.warning("Unable to get current price: pair_price is empty")
+            
+            # Plot arrows for positions
+            for position in positions:
+                if 'timestamp' in position:
+                    timestamp = datetime.fromisoformat(position['timestamp'])
+                    if timestamp in pair_price.index:
+                        price = pair_price.loc[timestamp]
+                        if position['type'] == 'long':
+                            self.ax.annotate('↑', (timestamp, price), xytext=(0, -20), 
+                                             textcoords='offset points', ha='center', va='bottom',
+                                             color='green', fontsize=15)
+                        elif position['type'] == 'short':
+                            self.ax.annotate('↓', (timestamp, price), xytext=(0, 20), 
+                                             textcoords='offset points', ha='center', va='top',
+                                             color='red', fontsize=15)
+                else:
+                    logger.warning(f"Position without timestamp: {position}")
             
             self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m-%d %H:%M:%S'))
-            plt.xticks(rotation=45, ha='right')
+            plt.xticks(rotation=45, ha='right', color='white')
+            plt.yticks(color='white')
+            
+            self.ax.set_facecolor('#252525')
+            self.fig.patch.set_facecolor('#353535')
             
             plt.tight_layout()
             self.canvas.draw()
+        else:
+            logger.warning("Unable to update chart: pair_price is None or empty")
 
     def refresh_positions(self):
         positions = []
@@ -315,6 +401,12 @@ class MainWindow(QMainWindow):
             positions = self.current_position or []
         
         self.control_panel.update_positions(positions)
+        
+        if self.ani:
+            self.ani.event_source.stop()
+            self.ani = FuncAnimation(self.fig, self.update_chart, interval=UPDATE_INTERVAL, 
+                                     blit=False, save_count=100)
+            self.canvas.draw()
 
     def load_position(self):
         if os.path.exists('current_position.json') and os.path.getsize('current_position.json') > 0:
@@ -343,64 +435,6 @@ class MainWindow(QMainWindow):
 class TradingDialog(QDialog):
     def __init__(self, parent=None, symbol1="", symbol2=""):
         super().__init__(parent)
-        self.setWindowTitle("Pear Tradooor")
-        self.symbol1 = symbol1
-        self.symbol2 = symbol2
-        self.session = session  # Use the global session object
-        self.current_position = None  # Add this line to store the current position
-
-        # Set the dialog position at the bottom of the screen
-        screen = QApplication.primaryScreen().geometry()
-        dialog_width = 200  # Adjust this value as needed
-        dialog_height = 125
-        self.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
-
-        layout = QVBoxLayout()
-
-        # Pair information
-        symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-        symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-        self.pair_label = QLabel(f"Trading Pair: {symbol2_truncated}/{symbol1_truncated}")
-        layout.addWidget(self.pair_label)
-
-        # Long and Short buttons
-        button_layout = QHBoxLayout()
-        self.long_button = QPushButton("Long Pair")
-        self.short_button = QPushButton("Short Pair")
-        button_layout.addWidget(self.long_button)
-        button_layout.addWidget(self.short_button)
-        layout.addLayout(button_layout)
-
-        # Order size
-        size_layout = QHBoxLayout()
-        size_layout.addWidget(QLabel("Order Size ($):"))
-        self.order_size = QDoubleSpinBox()
-        self.order_size.setRange(10, 1000000)
-        self.order_size.setValue(60)
-        self.order_size.setPrefix("$")
-        size_layout.addWidget(self.order_size)
-        layout.addLayout(size_layout)
-
-        self.setLayout(layout)
-
-        # Connect buttons to trading methods
-        self.long_button.clicked.connect(self.long_pair)
-        self.short_button.clicked.connect(self.short_pair)
-
-        self.load_position()
-
-    def update_symbols(self, symbol1, symbol2):
-        self.symbol1 = symbol1
-        self.symbol2 = symbol2
-        self.setWindowTitle(f"Pear Tradooor - {symbol2}/{symbol1}")
-        
-        symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-        symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-        self.pair_label.setText(f"Trading Pair: {symbol2_truncated}/{symbol1_truncated}")
-
-class TradingDialog(QDialog):
-    def __init__(self, parent=None, symbol1="", symbol2=""):
-        super().__init__(parent)
         self.setWindowTitle("Pear Tradooor - Trading Panel")
         self.symbol1 = symbol1
         self.symbol2 = symbol2
@@ -409,9 +443,12 @@ class TradingDialog(QDialog):
 
         # Set the dialog position at the bottom of the screen
         screen = QApplication.primaryScreen().geometry()
+        self.setGeometry(100, 100, 300, 200)
+        '''
         dialog_width = 300  # Adjust this value as needed
         dialog_height = 150
         self.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
+        '''
 
         layout = QVBoxLayout()
 
@@ -446,6 +483,29 @@ class TradingDialog(QDialog):
         self.short_button.clicked.connect(self.short_pair)
 
         self.load_position()
+        self.set_dark_theme()
+
+    def set_dark_theme(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #353535;
+                color: white;
+            }
+            QPushButton {
+                background-color: #2A82DA;
+                color: white;
+                border: none;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #3A92EA;
+            }
+            QLineEdit, QDoubleSpinBox {
+                background-color: #252525;
+                color: white;
+                border: 1px solid #555555;
+            }
+        """)
 
     def get_current_prices(self):
         try:
@@ -518,6 +578,7 @@ class TradingDialog(QDialog):
             if response1['retCode'] == 0 and response2['retCode'] == 0:
                 new_position = {
                     'type': 'long',
+                    'timestamp': datetime.now().isoformat(),
                     self.symbol1: {'side': 'Sell', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Buy', 'qty': qty2, 'entry_price': price2}
                 }
@@ -573,6 +634,7 @@ class TradingDialog(QDialog):
             if response1['retCode'] == 0 and response2['retCode'] == 0:
                 new_position = {
                     'type': 'short',
+                    'timestamp': datetime.now().isoformat(),
                     self.symbol1: {'side': 'Buy', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Sell', 'qty': qty2, 'entry_price': price2}
                 }
@@ -601,7 +663,7 @@ class TradingDialog(QDialog):
         try:
             for position in self.current_position:
                 for symbol, pos_data in position.items():
-                    if symbol != 'type':
+                    if symbol not in ['type', 'timestamp'] and isinstance(pos_data, dict):
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
                             category="linear",
@@ -628,7 +690,7 @@ class TradingDialog(QDialog):
             position = self.current_position[index]
             try:
                 for symbol, pos_data in position.items():
-                    if symbol != 'type':
+                    if symbol not in ['type', 'timestamp']:
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
                             category="linear",
@@ -640,6 +702,7 @@ class TradingDialog(QDialog):
                         )
                         print(f"Close position response for {symbol}: {response}")
                 
+                position.pop('timestamp', None)
                 del self.current_position[index]
                 self.save_position()
                 self.parent().refresh_positions()
@@ -686,6 +749,22 @@ class TradingDialog(QDialog):
 
 def main():
     app = QApplication([])
+    app.setStyle("Fusion")
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(53, 53, 53))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    palette.setColor(QPalette.ToolTipBase, Qt.white)
+    palette.setColor(QPalette.ToolTipText, Qt.white)
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.HighlightedText, Qt.black)
+    app.setPalette(palette)
     window = MainWindow()
     window.show()
     app.exec_()
