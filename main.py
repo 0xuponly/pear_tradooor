@@ -97,7 +97,7 @@ class ControlPanel(QWidget):
 
         layout = QVBoxLayout()
 
-        self.account_info_label = QLabel("Account Balance: $0.00 | Available Margin: $0.00")
+        self.account_info_label = QLabel("Account Balance: $0.00")
         layout.addWidget(self.account_info_label)
 
         self.positions_label = QLabel("  Open Positions:")
@@ -162,8 +162,8 @@ class ControlPanel(QWidget):
             for index, position in enumerate(positions):
                 if isinstance(position, dict):
                     position_type = position.get('type', '').upper()
-                    timestamp = position.get('timestamp', '')
-                    symbols = [key for key in position.keys() if key not in ['type', 'timestamp']]
+                    timestamp = position.get('timestamp_rounded', '')
+                    symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded']]
                     if len(symbols) >= 2:
                         symbol1, symbol2 = symbols[:2]
                         pos1 = position.get(symbol1, {})
@@ -185,6 +185,7 @@ class ControlPanel(QWidget):
                             upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
                             upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
                             combined_upnl = upnl1 + upnl2
+                            position['combined_upnl'] = combined_upnl
                             # Calculate percentage UPNL
                             order_size = self.get_order_size()
                             upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
@@ -213,7 +214,6 @@ class ControlPanel(QWidget):
         # Calculate and display combined UPnL
         combined_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
         self.combined_upnl_label.setText(f"  Total UPnL: ${combined_upnl:.2f}")
-
         # Force update of the layout
         self.positions_label.updateGeometry()
         self.updateGeometry()
@@ -251,20 +251,19 @@ class ControlPanel(QWidget):
             if account_info['retCode'] == 0:
                 wallet_info = account_info['result']['list'][0]
                 total_equity = float(wallet_info['totalEquity'])
-                available_balance = float(wallet_info.get('availableBalance', wallet_info['totalWalletBalance']))
-                return total_equity, available_balance
+                return total_equity
             else:
                 logger.error(f"Error getting account info: {account_info['retMsg']}")
-                return None, None
+                return None
         except Exception as e:
             logger.error(f"Error getting account info: {e}")
-            return None, None
+            return None
     def update_account_info(self):
-        total_equity, available_balance = self.get_account_info()
-        if total_equity is not None and available_balance is not None:
-            self.account_info_label.setText(f"  Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}\n")
+        total_equity = self.get_account_info()
+        if total_equity is not None:
+            self.account_info_label.setText(f"  Account Balance: ${total_equity:.2f}")
         else:
-            self.account_info_label.setText("  Account Balance: N/A | Available Margin: N/A\n")
+            self.account_info_label.setText("  Account Balance: N/A")
 
     def toggle_trading_panel(self):
         parent = self.parent()
@@ -372,8 +371,8 @@ class MainWindow(QMainWindow):
             # Plot arrows for positions
             if positions:  # Add this check
                 for position in positions:
-                    if 'timestamp' in position:
-                        timestamp = datetime.fromisoformat(position['timestamp'])
+                    if 'timestamp_rounded' in position:
+                        timestamp = datetime.fromisoformat(position['timestamp_rounded'])
                         if timestamp in pair_price.index:
                             price = pair_price.loc[timestamp]
                             if position['type'] == 'long':
@@ -385,7 +384,7 @@ class MainWindow(QMainWindow):
                                                  textcoords='offset points', ha='center', va='top',
                                                  color='red', fontsize=15)
                     else:
-                        logger.warning(f"Position without timestamp: {position}")
+                        logger.warning(f"Position without rounded timestamp: {position}")
             
             self.ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%Y-%m-%d %H:%M:%S'))
             plt.xticks(rotation=45, ha='right', color='white')
@@ -602,6 +601,8 @@ class TradingDialog(QDialog):
                 new_position = {
                     'type': 'long',
                     'timestamp': datetime.now().isoformat(),
+                    'timestamp_rounded': dt.datetime.now().replace(second=0, microsecond=0).isoformat(),
+                    'combined_upnl': 0,
                     self.symbol1: {'side': 'Sell', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Buy', 'qty': qty2, 'entry_price': price2}
                 }
@@ -658,6 +659,8 @@ class TradingDialog(QDialog):
                 new_position = {
                     'type': 'short',
                     'timestamp': datetime.now().isoformat(),
+                    'timestamp_rounded': dt.datetime.now().replace(second=0, microsecond=0).isoformat(),
+                    'combined_upnl': 0,
                     self.symbol1: {'side': 'Buy', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Sell', 'qty': qty2, 'entry_price': price2}
                 }
@@ -686,7 +689,7 @@ class TradingDialog(QDialog):
         try:
             for position in self.current_position:
                 for symbol, pos_data in position.items():
-                    if symbol not in ['type', 'timestamp'] and isinstance(pos_data, dict):
+                    if symbol not in ['type', 'timestamp', 'timestamp_rounded'] and isinstance(pos_data, dict):
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
                             category="linear",
@@ -713,7 +716,7 @@ class TradingDialog(QDialog):
             position = self.current_position[index]
             try:
                 for symbol, pos_data in position.items():
-                    if symbol not in ['type', 'timestamp']:
+                    if symbol not in ['type', 'timestamp', 'timestamp_rounded']:
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
                             category="linear",
@@ -726,6 +729,7 @@ class TradingDialog(QDialog):
                         print(f"Close position response for {symbol}: {response}")
                 
                 position.pop('timestamp', None)
+                position.pop('timestamp_rounded', None)
                 del self.current_position[index]
                 self.save_position()
                 self.parent().refresh_positions()
