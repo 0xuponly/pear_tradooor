@@ -3,3 +3,5 @@ new_env/
 *.pyc
 __pycache__/
 current_position.json
+trade_log.csv
+

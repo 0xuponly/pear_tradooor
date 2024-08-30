@@ -15,6 +15,7 @@ from PyQt5.QtCore import Qt, QTimer
 import json
 from PyQt5.QtGui import QPalette, QColor
 from datetime import datetime
+import uuid
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -204,50 +205,53 @@ class ControlPanel(QWidget):
         if isinstance(position, dict):
             if is_script_position:
                 position_type = position.get('type', '').upper()[0]
-                symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl']]
+                symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl', 'trade_id']]
                 if len(symbols) >= 2:
                     symbol1, symbol2 = symbols[:2]
                     pos1 = position.get(symbol1, {})
                     pos2 = position.get(symbol2, {})
-                    qty1 = pos1.get('qty', 0)
-                    qty2 = pos2.get('qty', 0)
-                    entry_price1 = pos1.get('entry_price', 0)
-                    entry_price2 = pos2.get('entry_price', 0)
-                    
-                    # Calculate dollar values
-                    dollar_value1 = qty1 * entry_price1
-                    dollar_value2 = qty2 * entry_price2
-                    average_dollar_value = (dollar_value1 + dollar_value2) / 2
-                    
-                    # Calculate combined UPNL
-                    current_price1 = self.get_current_price(symbol1)
-                    current_price2 = self.get_current_price(symbol2)
-                    upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
-                    upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
-                    combined_upnl = upnl1 + upnl2
-                    position['combined_upnl'] = combined_upnl
-                    
-                    # Calculate percentage UPNL
-                    order_size = self.get_order_size()
-                    upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
-                    
-                    # Truncate symbols
-                    symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-                    symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-                    
-                    position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
-                    
-                    position_widget = QWidget()
-                    position_layout = QHBoxLayout(position_widget)
-                    position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
-                    position_label = QLabel(position_text)
-                    position_layout.addWidget(position_label)
-                    
-                    close_button = QPushButton("Close")
-                    close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
-                    position_layout.addWidget(close_button)
-                    
-                    layout.addWidget(position_widget)
+                    if isinstance(pos1, dict) and isinstance(pos2, dict):
+                        qty1 = pos1.get('qty', 0)
+                        qty2 = pos2.get('qty', 0)
+                        entry_price1 = pos1.get('entry_price', 0)
+                        entry_price2 = pos2.get('entry_price', 0)
+                        
+                        # Calculate dollar values
+                        dollar_value1 = qty1 * entry_price1
+                        dollar_value2 = qty2 * entry_price2
+                        average_dollar_value = (dollar_value1 + dollar_value2) / 2
+                        
+                        # Calculate combined UPNL
+                        current_price1 = self.get_current_price(symbol1)
+                        current_price2 = self.get_current_price(symbol2)
+                        upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
+                        upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
+                        combined_upnl = upnl1 + upnl2
+                        position['combined_upnl'] = combined_upnl
+                        
+                        # Calculate percentage UPNL
+                        order_size = self.get_order_size()
+                        upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
+                        
+                        # Truncate symbols
+                        symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
+                        symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
+                        
+                        position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
+                        
+                        position_widget = QWidget()
+                        position_layout = QHBoxLayout(position_widget)
+                        position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
+                        position_label = QLabel(position_text)
+                        position_layout.addWidget(position_label)
+                        
+                        close_button = QPushButton("Close")
+                        close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
+                        position_layout.addWidget(close_button)
+                        
+                        layout.addWidget(position_widget)
+                    else:
+                        logger.error(f"Invalid position data structure for {symbol1} or {symbol2}")
             else:
                 try:
                     symbol = position['symbol']
@@ -684,8 +688,10 @@ class TradingDialog(QDialog):
             )
             
             if response1['retCode'] == 0 and response2['retCode'] == 0:
+                trade_id = self.generate_trade_id()
                 new_position = {
                     'type': 'long',
+                    'trade_id': trade_id,
                     'timestamp': datetime.now().isoformat(),
                     'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
                     'combined_upnl': 0,
@@ -699,6 +705,7 @@ class TradingDialog(QDialog):
                     self.current_position.append(new_position)
                 
                 self.save_position()
+                self.log_trade('LONG', self.symbol1, self.symbol2, qty1, qty2, price1, price2, trade_id)
                 self.parent().refresh_positions()  # Refresh the positions display
                 QMessageBox.information(self, "Success", "Long pair order placed successfully.")
             else:
@@ -742,8 +749,10 @@ class TradingDialog(QDialog):
             )
             
             if response1['retCode'] == 0 and response2['retCode'] == 0:
+                trade_id = self.generate_trade_id()
                 new_position = {
                     'type': 'short',
+                    'trade_id': trade_id,
                     'timestamp': datetime.now().isoformat(),
                     'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
                     'combined_upnl': 0,
@@ -757,6 +766,7 @@ class TradingDialog(QDialog):
                     self.current_position.append(new_position)
                 
                 self.save_position()
+                self.log_trade('SHORT', self.symbol1, self.symbol2, qty1, qty2, price1, price2, trade_id)
                 self.parent().refresh_positions()  # Refresh the positions display
                 QMessageBox.information(self, "Success", "Short pair order placed successfully.")
             else:
@@ -802,18 +812,26 @@ class TradingDialog(QDialog):
             position = self.current_position[index]
             try:
                 for symbol, pos_data in position.items():
-                    if symbol not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl'] and isinstance(pos_data, dict):
-                        close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
-                        response = self.session.place_order(
-                            category="linear",
-                            symbol=symbol,
-                            side=close_side,
-                            orderType="Market",
-                            qty=str(pos_data['qty']),
-                            reduceOnly=True
-                        )
-                        print(f"Close position response for {symbol}: {response}")
-                
+                    if symbol not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl', 'trade_id'] and isinstance(pos_data, dict):
+                        if float(pos_data['qty']) > 0:  # Only close if there's an open position
+                            close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
+                            response = self.session.place_order(
+                                category="linear",
+                                symbol=symbol,
+                                side=close_side,
+                                orderType="Market",
+                                qty=str(pos_data['qty']),
+                                reduceOnly=True
+                            )
+                            print(f"Close position response for {symbol}: {response}")
+                        else:
+                            print(f"No open position for {symbol}, skipping.")
+
+                self.log_trade('CLOSE', self.symbol1, self.symbol2, 
+                               position.get(self.symbol1, {}).get('qty', 0), 
+                               position.get(self.symbol2, {}).get('qty', 0), 
+                               self.get_current_prices()[0], self.get_current_prices()[1], 
+                               position.get('trade_id', ''))
                 del self.current_position[index]
                 self.save_position()
                 self.parent().refresh_positions()
@@ -878,6 +896,20 @@ class TradingDialog(QDialog):
         self.is_closed = True
         self.parent().control_panel.toggle_trading_panel_button.setText("Show Trading Panel")
         event.ignore()
+
+    def log_trade(self, trade_type, symbol1, symbol2, qty1, qty2, price1, price2, trade_id):
+        timestamp = datetime.now().isoformat()
+        log_entry = f"{timestamp},{trade_id},{trade_type},{symbol1},{qty1},{price1},{symbol2},{qty2},{price2}\n"
+        
+        file_exists = os.path.exists('trade_log.csv')
+        
+        with open('trade_log.csv', 'a') as f:
+            if not file_exists:
+                f.write("timestamp,trade_id,trade_type,symbol1,qty1,price1,symbol2,qty2,price2\n")  # Write header
+            f.write(log_entry)
+
+    def generate_trade_id(self):
+        return str(uuid.uuid4())
 
 def main():
     app = QApplication([])
