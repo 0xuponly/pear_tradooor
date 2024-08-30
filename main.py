@@ -100,7 +100,7 @@ class ControlPanel(QWidget):
         self.account_info_label = QLabel("Account Balance: $0.00")
         layout.addWidget(self.account_info_label)
 
-        self.positions_label = QLabel("  Open Positions:")
+        self.positions_label = QLabel("  ")
         layout.addWidget(self.positions_label)
 
         self.positions_layout = QVBoxLayout()
@@ -111,13 +111,29 @@ class ControlPanel(QWidget):
         self.combined_upnl_label = QLabel("Combined UPnL: $0.00")
         layout.addWidget(self.combined_upnl_label)
 
-        self.close_all_button = QPushButton("Close All Positions")
+        self.close_all_button = QPushButton("Close All Pears")
         layout.addWidget(self.close_all_button)
 
         # Add toggle trading panel button
         self.toggle_trading_panel_button = QPushButton("Hide Trading Panel")
         self.toggle_trading_panel_button.clicked.connect(self.toggle_trading_panel)
         layout.addWidget(self.toggle_trading_panel_button)
+
+        self.script_positions_label = QLabel("  Open Pears:")
+        layout.addWidget(self.script_positions_label)
+
+        self.script_positions_layout = QVBoxLayout()
+        script_positions_widget = QWidget()
+        script_positions_widget.setLayout(self.script_positions_layout)
+        layout.addWidget(script_positions_widget)
+
+        self.all_positions_label = QLabel("  Open Apples:")
+        layout.addWidget(self.all_positions_label)
+
+        self.all_positions_layout = QVBoxLayout()
+        all_positions_widget = QWidget()
+        all_positions_widget.setLayout(self.all_positions_layout)
+        layout.addWidget(all_positions_widget)
 
         self.setLayout(layout)
 
@@ -149,74 +165,128 @@ class ControlPanel(QWidget):
     def update_positions(self, positions):
         self.update_account_info()
 
-        # Clear the existing layout
-        while self.positions_layout.count():
-            item = self.positions_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Clear existing layouts
+        self.clear_layout(self.script_positions_layout)
+        self.clear_layout(self.all_positions_layout)
 
-        # Set negative spacing to reduce space between widgets
-        self.positions_layout.setSpacing(-5)  # Adjust this value as needed
-
+        # Update script positions
         if positions and isinstance(positions, list):
             for index, position in enumerate(positions):
-                if isinstance(position, dict):
-                    position_type = position.get('type', '').upper()
-                    timestamp = position.get('timestamp_rounded', '')
-                    symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded']]
-                    if len(symbols) >= 2:
-                        symbol1, symbol2 = symbols[:2]
-                        pos1 = position.get(symbol1, {})
-                        pos2 = position.get(symbol2, {})
-                        if isinstance(pos1, dict) and isinstance(pos2, dict):
-                            qty1 = pos1.get('qty', 0)
-                            qty2 = pos2.get('qty', 0)
-                            entry_price1 = pos1.get('entry_price', 0)
-                            entry_price2 = pos2.get('entry_price', 0)
-                            
-                            # Calculate dollar values
-                            dollar_value1 = qty1 * entry_price1
-                            dollar_value2 = qty2 * entry_price2
-                            average_dollar_value = (dollar_value1 + dollar_value2) / 2
-                            
-                            # Calculate combined UPNL
-                            current_price1 = self.get_current_price(symbol1)
-                            current_price2 = self.get_current_price(symbol2)
-                            upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
-                            upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
-                            combined_upnl = upnl1 + upnl2
-                            position['combined_upnl'] = combined_upnl
-                            # Calculate percentage UPNL
-                            order_size = self.get_order_size()
-                            upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
-                            
-                            # Truncate symbols
-                            symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
-                            symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
-                            
-                            position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
-                            
-                            position_widget = QWidget()
-                            position_layout = QHBoxLayout(position_widget)
-                            position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
-                            position_label = QLabel(position_text)
-                            position_layout.addWidget(position_label)
-                            
-                            close_button = QPushButton("Close")
-                            close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
-                            position_layout.addWidget(close_button)
-                            
-                            self.positions_layout.addWidget(position_widget)
+                self.add_position_to_layout(position, index, self.script_positions_layout, is_script_position=True)
         else:
             no_positions_label = QLabel("- - - - -")
-            self.positions_layout.addWidget(no_positions_label)
+            self.script_positions_layout.addWidget(no_positions_label)
+
+        # Update all positions
+        all_positions = self.get_all_open_positions()
+        if all_positions:
+            for index, position in enumerate(all_positions):
+                self.add_position_to_layout(position, index, self.all_positions_layout, is_script_position=False)
+        else:
+            no_positions_label = QLabel("- - - - -")
+            self.all_positions_layout.addWidget(no_positions_label)
 
         # Calculate and display combined UPnL
         combined_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
         self.combined_upnl_label.setText(f"  Total UPnL: ${combined_upnl:.2f}")
+
         # Force update of the layout
         self.positions_label.updateGeometry()
         self.updateGeometry()
+
+    def clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def add_position_to_layout(self, position, index, layout, is_script_position):
+        if isinstance(position, dict):
+            if is_script_position:
+                position_type = position.get('type', '').upper()
+                symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl']]
+                if len(symbols) >= 2:
+                    symbol1, symbol2 = symbols[:2]
+                    pos1 = position.get(symbol1, {})
+                    pos2 = position.get(symbol2, {})
+                    qty1 = pos1.get('qty', 0)
+                    qty2 = pos2.get('qty', 0)
+                    entry_price1 = pos1.get('entry_price', 0)
+                    entry_price2 = pos2.get('entry_price', 0)
+                    
+                    # Calculate dollar values
+                    dollar_value1 = qty1 * entry_price1
+                    dollar_value2 = qty2 * entry_price2
+                    average_dollar_value = (dollar_value1 + dollar_value2) / 2
+                    
+                    # Calculate combined UPNL
+                    current_price1 = self.get_current_price(symbol1)
+                    current_price2 = self.get_current_price(symbol2)
+                    upnl1 = (current_price1 - entry_price1) * qty1 * (-1 if pos1['side'] == 'Sell' else 1)
+                    upnl2 = (current_price2 - entry_price2) * qty2 * (-1 if pos2['side'] == 'Sell' else 1)
+                    combined_upnl = upnl1 + upnl2
+                    position['combined_upnl'] = combined_upnl
+                    
+                    # Calculate percentage UPNL
+                    order_size = self.get_order_size()
+                    upnl_percentage = (combined_upnl / order_size) * 100 if order_size else 0
+                    
+                    # Truncate symbols
+                    symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
+                    symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
+                    
+                    position_text = f"{position_type} ${average_dollar_value:.2f} {symbol2_truncated}/{symbol1_truncated} ${combined_upnl:.2f} {upnl_percentage:.2f}%"
+                    
+                    position_widget = QWidget()
+                    position_layout = QHBoxLayout(position_widget)
+                    position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
+                    position_label = QLabel(position_text)
+                    position_layout.addWidget(position_label)
+                    
+                    close_button = QPushButton("Close")
+                    close_button.clicked.connect(lambda checked, idx=index: self.close_position(idx))
+                    position_layout.addWidget(close_button)
+                    
+                    layout.addWidget(position_widget)
+            else:
+                try:
+                    symbol = position['symbol']
+                    qty = float(position['size'])
+                    entry_price = float(position.get('entryPrice', position.get('entry_price', 0)))
+                    side = position['side']
+                    unrealised_pnl = float(position.get('unrealisedPnl', position.get('unrealized_pnl', 0)))
+                    
+                    # Get current price
+                    current_price = self.get_current_price(symbol)
+                    
+                    # Calculate initial position value
+                    initial_position_value = qty * entry_price
+                    
+                    # Calculate dollar value using current price
+                    dollar_value = qty * current_price if current_price else 0
+                    
+                    # Calculate percentage UPNL
+                    upnl_percentage = (unrealised_pnl / initial_position_value) * 100 if initial_position_value else 0
+                    
+                    # Truncate symbol
+                    symbol_truncated = symbol[:-4] if symbol.endswith(('USDT', 'USDC')) else symbol
+                    
+                    position_text = f"{'L' if side == 'Buy' else 'S'} ${dollar_value:.2f} {symbol_truncated} ${unrealised_pnl:.2f} {upnl_percentage:.2f}%"
+                    
+                    position_widget = QWidget()
+                    position_layout = QHBoxLayout(position_widget)
+                    position_layout.setContentsMargins(0, 5, 0, 5)  # Adjust top and bottom margins
+                    position_label = QLabel(position_text)
+                    position_layout.addWidget(position_label)
+                    
+                    layout.addWidget(position_widget)
+                except KeyError as e:
+                    logger.error(f"KeyError in position data: {e}")
+                    logger.error(f"Position data: {position}")
+                except Exception as e:
+                    logger.error(f"Error processing position: {e}")
+                    logger.error(f"Position data: {position}")
+
     def get_current_price(self, symbol):
         try:
             ticker = session.get_tickers(category="linear", symbol=symbol)
@@ -271,6 +341,21 @@ class ControlPanel(QWidget):
             parent.toggle_trading_panel()
         else:
             logger.warning("Parent does not have toggle_trading_panel method")
+
+    def get_all_open_positions(self):
+        try:
+            positions = self.session.get_positions(
+                category="linear",
+                settleCoin="USDT"
+            )
+            if positions['retCode'] == 0:
+                return [pos for pos in positions['result']['list'] if float(pos['size']) > 0]
+            else:
+                logger.error(f"Error getting all open positions: {positions['retMsg']}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting all open positions: {e}")
+            return None
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -470,7 +555,7 @@ class TradingDialog(QDialog):
         layout.addWidget(self.symbol1_input)
         
         # Add Chart button
-        self.load_pair_button = QPushButton("Load Pair")
+        self.load_pair_button = QPushButton("Load Pear")
         layout.addWidget(self.load_pair_button)
 
         # Pair information
@@ -481,8 +566,8 @@ class TradingDialog(QDialog):
 
         # Long and Short buttons
         button_layout = QHBoxLayout()
-        self.long_button = QPushButton("Long Pair")
-        self.short_button = QPushButton("Short Pair")
+        self.long_button = QPushButton("LONG")
+        self.short_button = QPushButton("SHORT")
         button_layout.addWidget(self.long_button)
         button_layout.addWidget(self.short_button)
         layout.addLayout(button_layout)
@@ -601,7 +686,7 @@ class TradingDialog(QDialog):
                 new_position = {
                     'type': 'long',
                     'timestamp': datetime.now().isoformat(),
-                    'timestamp_rounded': dt.datetime.now().replace(second=0, microsecond=0).isoformat(),
+                    'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
                     'combined_upnl': 0,
                     self.symbol1: {'side': 'Sell', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Buy', 'qty': qty2, 'entry_price': price2}
@@ -659,7 +744,7 @@ class TradingDialog(QDialog):
                 new_position = {
                     'type': 'short',
                     'timestamp': datetime.now().isoformat(),
-                    'timestamp_rounded': dt.datetime.now().replace(second=0, microsecond=0).isoformat(),
+                    'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
                     'combined_upnl': 0,
                     self.symbol1: {'side': 'Buy', 'qty': qty1, 'entry_price': price1},
                     self.symbol2: {'side': 'Sell', 'qty': qty2, 'entry_price': price2}
