@@ -203,7 +203,7 @@ class ControlPanel(QWidget):
     def add_position_to_layout(self, position, index, layout, is_script_position):
         if isinstance(position, dict):
             if is_script_position:
-                position_type = position.get('type', '').upper()
+                position_type = position.get('type', '').upper()[0]
                 symbols = [key for key in position.keys() if key not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl']]
                 if len(symbols) >= 2:
                     symbol1, symbol2 = symbols[:2]
@@ -266,12 +266,13 @@ class ControlPanel(QWidget):
                     dollar_value = qty * current_price if current_price else 0
                     
                     # Calculate percentage UPNL
+                    order_size = self.get_order_size()
                     upnl_percentage = (unrealised_pnl / initial_position_value) * 100 if initial_position_value else 0
                     
                     # Truncate symbol
                     symbol_truncated = symbol[:-4] if symbol.endswith(('USDT', 'USDC')) else symbol
                     
-                    position_text = f"{'L' if side == 'Buy' else 'S'} ${dollar_value:.2f} {symbol_truncated} ${unrealised_pnl:.2f} {upnl_percentage:.2f}%"
+                    position_text = f"{'LONG' if side == 'Buy' else 'SHORT'} ${dollar_value:.2f} {symbol_truncated} ${unrealised_pnl:.2f} {upnl_percentage:.2f}%"
                     
                     position_widget = QWidget()
                     position_layout = QHBoxLayout(position_widget)
@@ -801,7 +802,7 @@ class TradingDialog(QDialog):
             position = self.current_position[index]
             try:
                 for symbol, pos_data in position.items():
-                    if symbol not in ['type', 'timestamp', 'timestamp_rounded']:
+                    if symbol not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl'] and isinstance(pos_data, dict):
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
                             category="linear",
@@ -813,15 +814,13 @@ class TradingDialog(QDialog):
                         )
                         print(f"Close position response for {symbol}: {response}")
                 
-                position.pop('timestamp', None)
-                position.pop('timestamp_rounded', None)
                 del self.current_position[index]
                 self.save_position()
                 self.parent().refresh_positions()
                 QMessageBox.information(self, "Success", "Position closed successfully.")
             except Exception as e:
                 logger.error(f"Error closing position: {e}")
-                QMessageBox.warning(self, "Error", f"Failed to close position: {e}")
+                QMessageBox.warning(self, "Error", f"Failed to close position: {str(e)}")
         else:
             QMessageBox.warning(self, "Error", "Invalid position index.")
 
