@@ -92,24 +92,10 @@ class ControlPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Window)
         self.setWindowTitle("Pear Tradooor - Control Panel")
-        self.setGeometry(100, 100, 300, 200)
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.session = session  # Add this line to use the global session object
 
         layout = QVBoxLayout()
-
-        self.symbol1_input = QLineEdit()
-        self.symbol2_input = QLineEdit()
-        self.symbol1_input.setPlaceholderText("default: BTCUSDT")
-        self.symbol2_input.setPlaceholderText("e.g., POPCATUSDT")
-
-        layout.addWidget(QLabel("Base:"))
-        layout.addWidget(self.symbol1_input)
-        layout.addWidget(QLabel("Quote:"))
-        layout.addWidget(self.symbol2_input)
-
-        self.start_button = QPushButton("Chart")
-        layout.addWidget(self.start_button)
 
         self.account_info_label = QLabel("Account Balance: $0.00 | Available Margin: $0.00")
         layout.addWidget(self.account_info_label)
@@ -128,10 +114,15 @@ class ControlPanel(QWidget):
         self.close_all_button = QPushButton("Close All Positions")
         layout.addWidget(self.close_all_button)
 
+        # Add toggle trading panel button
+        self.toggle_trading_panel_button = QPushButton("Hide Trading Panel")
+        self.toggle_trading_panel_button.clicked.connect(self.toggle_trading_panel)
+        layout.addWidget(self.toggle_trading_panel_button)
+
         self.setLayout(layout)
 
-        self.connect_signals()
         self.set_dark_theme()
+        self.setGeometry(0, 0, 400, 200)  # x, y, width, height
 
     def set_dark_theme(self):
         self.setStyleSheet("""
@@ -155,10 +146,6 @@ class ControlPanel(QWidget):
             }
             QLabel { color: white; }
         """)
-
-    def connect_signals(self):
-        self.symbol2_input.returnPressed.connect(self.start_button.click)
-
     def update_positions(self, positions):
         self.update_account_info()
 
@@ -224,24 +211,12 @@ class ControlPanel(QWidget):
             self.positions_layout.addWidget(no_positions_label)
 
         # Calculate and display combined UPnL
-        combined_upnl = 0
-        for position in positions:
-            if isinstance(position, dict):
-                for symbol, pos_data in position.items():
-                    if symbol not in ['type', 'timestamp']:
-                        if isinstance(pos_data, dict):
-                            current_price = self.get_current_price(symbol)
-                            entry_price = pos_data.get('entry_price', 0)
-                            qty = pos_data.get('qty', 0)
-                            side_multiplier = -1 if pos_data['side'] == 'Sell' else 1
-                            upnl = (current_price - entry_price) * qty * side_multiplier
-                            combined_upnl += upnl
+        combined_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
         self.combined_upnl_label.setText(f"  Total UPnL: ${combined_upnl:.2f}")
 
         # Force update of the layout
         self.positions_label.updateGeometry()
         self.updateGeometry()
-
     def get_current_price(self, symbol):
         try:
             ticker = session.get_tickers(category="linear", symbol=symbol)
@@ -284,35 +259,48 @@ class ControlPanel(QWidget):
         except Exception as e:
             logger.error(f"Error getting account info: {e}")
             return None, None
-
     def update_account_info(self):
         total_equity, available_balance = self.get_account_info()
         if total_equity is not None and available_balance is not None:
-            self.account_info_label.setText(f"  Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}")
+            self.account_info_label.setText(f"  Account Balance: ${total_equity:.2f} | Available Margin: ${available_balance:.2f}\n")
         else:
-            self.account_info_label.setText("  Account Balance: N/A | Available Margin: N/A")
+            self.account_info_label.setText("  Account Balance: N/A | Available Margin: N/A\n")
+
+    def toggle_trading_panel(self):
+        parent = self.parent()
+        if hasattr(parent, 'toggle_trading_panel'):
+            parent.toggle_trading_panel()
+        else:
+            logger.warning("Parent does not have toggle_trading_panel method")
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pear Tradooor - Chart")
-        self.setGeometry(100, 100, 800, 600)
+        screen = QApplication.primaryScreen().geometry()
+        self.control_panel = ControlPanel(self)
+        control_panel_width = self.control_panel.width()
+        self.setGeometry(control_panel_width, 0, screen.width() - control_panel_width, screen.height())
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-
         self.layout = QVBoxLayout(self.central_widget)
 
-        # Create control panel
-        self.control_panel = ControlPanel(self)
-        self.control_panel.start_button.clicked.connect(self.start_chart)
-        self.control_panel.close_all_button.clicked.connect(self.close_all_positions)
+        # Create chart widget
+        self.chart_widget = QWidget()
+        self.chart_layout = QVBoxLayout(self.chart_widget)
+        self.layout.addWidget(self.chart_widget)
 
         # Initialize trading dialog with default symbols
         self.symbol1 = "BTCUSDT"
-        self.symbol2 = "ETHUSDT"
+        self.symbol2 = "POPCATUSDT"
         self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
         self.trading_dialog.show()
+
+        # Create control panel as a separate window
+        self.control_panel = ControlPanel(self)
+        self.control_panel.close_all_button.clicked.connect(self.close_all_positions)
+        self.control_panel.show()
 
         self.fig = None
         self.ax = None
@@ -334,22 +322,13 @@ class MainWindow(QMainWindow):
         self.control_panel.raise_()
         self.control_panel.activateWindow()
 
-    def closeEvent(self, event):
-        self.control_panel.close()
-        event.accept()
-
-    def start_chart(self):
-        symbol1 = self.control_panel.symbol1_input.text().upper() or self.symbol1
-        symbol2 = self.control_panel.symbol2_input.text().upper() or self.symbol2
-
-        if self.validate_symbols(symbol1, symbol2):
-            self.symbol1 = symbol1
-            self.symbol2 = symbol2
-            self.create_chart(symbol1, symbol2)
-            # Update the trading dialog with new symbols
-            self.trading_dialog.update_symbols(symbol1, symbol2)
-        else:
-            QMessageBox.warning(self, "Invalid Symbols", "Please enter valid symbols.")
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'trading_dialog'):
+            screen = QApplication.primaryScreen().geometry()
+            dialog_width = 400  # Make sure this matches the width in TradingDialog
+            dialog_height = 250
+            self.trading_dialog.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
 
     def validate_symbols(self, symbol1, symbol2):
         # Add your symbol validation logic here
@@ -358,14 +337,14 @@ class MainWindow(QMainWindow):
 
     def create_chart(self, symbol1, symbol2):
         if self.fig:
-            self.layout.removeWidget(self.canvas)
+            self.chart_layout.removeWidget(self.canvas)
             self.canvas.deleteLater()
             plt.close(self.fig)
 
-        self.fig, self.ax = plt.subplots(figsize=(8, 5))
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color: #353535;")
-        self.layout.addWidget(self.canvas)
+        self.chart_layout.addWidget(self.canvas)
 
         self.ani = FuncAnimation(self.fig, self.update_chart, interval=UPDATE_INTERVAL, 
                                  blit=False, save_count=100)
@@ -452,13 +431,17 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Error", "Trading dialog not initialized.")
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, 'trading_dialog'):
-            screen = QApplication.primaryScreen().geometry()
-            dialog_width = 300  # Make sure this matches the width in TradingDialog
-            dialog_height = 150
-            self.trading_dialog.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
+    def toggle_trading_panel(self):
+        if self.trading_dialog.is_closed:
+            self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
+            self.trading_dialog.show()
+            self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
+        elif self.trading_dialog.isVisible():
+            self.trading_dialog.hide()
+            self.control_panel.toggle_trading_panel_button.setText("Show Trading Panel")
+        else:
+            self.trading_dialog.show()
+            self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
 
 class TradingDialog(QDialog):
     def __init__(self, parent=None, symbol1="", symbol2=""):
@@ -468,17 +451,28 @@ class TradingDialog(QDialog):
         self.symbol2 = symbol2
         self.session = session  # Use the global session object
         self.current_position = None  # Add this line to store the current position
+        self.is_closed = False
 
         # Set the dialog position at the bottom of the screen
         screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(100, 100, 300, 200)
-        '''
-        dialog_width = 300  # Adjust this value as needed
-        dialog_height = 150
-        self.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
-        '''
+        self.setGeometry(100, 100, 400, 200)  # Increased height to accommodate new elements
 
         layout = QVBoxLayout()
+
+        # Add input boxes for base and quote
+        self.symbol1_input = QLineEdit(self.symbol1)
+        self.symbol2_input = QLineEdit(self.symbol2)
+        self.symbol1_input.setPlaceholderText("Base (e.g., BTCUSDT)")
+        self.symbol2_input.setPlaceholderText("Quote (e.g., ETHUSDT)")
+
+        layout.addWidget(QLabel("Quote:"))
+        layout.addWidget(self.symbol2_input)
+        layout.addWidget(QLabel("Base:"))
+        layout.addWidget(self.symbol1_input)
+        
+        # Add Chart button
+        self.load_pair_button = QPushButton("Load Pair")
+        layout.addWidget(self.load_pair_button)
 
         # Pair information
         symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
@@ -509,6 +503,7 @@ class TradingDialog(QDialog):
         # Connect buttons to trading methods
         self.long_button.clicked.connect(self.long_pair)
         self.short_button.clicked.connect(self.short_pair)
+        self.load_pair_button.clicked.connect(self.update_chart)
 
         self.load_position()
         self.set_dark_theme()
@@ -776,6 +771,25 @@ class TradingDialog(QDialog):
         symbol1_truncated = symbol1[:-4] if symbol1.endswith(('USDT', 'USDC')) else symbol1
         symbol2_truncated = symbol2[:-4] if symbol2.endswith(('USDT', 'USDC')) else symbol2
         self.pair_label.setText(f"Trading Pair: {symbol2_truncated}/{symbol1_truncated}")
+
+    def update_chart(self):
+        symbol1 = self.symbol1_input.text().upper() or self.symbol1
+        symbol2 = self.symbol2_input.text().upper() or self.symbol2
+        if self.parent().validate_symbols(symbol1, symbol2):
+            self.symbol1 = symbol1
+            self.symbol2 = symbol2
+            self.parent().symbol1 = symbol1
+            self.parent().symbol2 = symbol2
+            self.parent().create_chart(symbol1, symbol2)
+            self.update_symbols(symbol1, symbol2)
+        else:
+            QMessageBox.warning(self, "Invalid Symbols", "Please enter valid symbols.")
+
+    def closeEvent(self, event):
+        self.hide()
+        self.is_closed = True
+        self.parent().control_panel.toggle_trading_panel_button.setText("Show Trading Panel")
+        event.ignore()
 
 def main():
     app = QApplication([])
