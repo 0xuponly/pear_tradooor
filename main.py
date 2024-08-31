@@ -101,16 +101,11 @@ class ControlPanel(QWidget):
         self.account_info_label = QLabel("Account Balance: $0.00")
         layout.addWidget(self.account_info_label)
 
-        self.positions_label = QLabel("  ")
-        layout.addWidget(self.positions_label)
-
-        self.positions_layout = QVBoxLayout()
-        positions_widget = QWidget()
-        positions_widget.setLayout(self.positions_layout)
-        layout.addWidget(positions_widget)
-
-        self.combined_upnl_label = QLabel("Combined UPnL: $0.00")
+        self.combined_upnl_label = QLabel("Total UPnL: $0.00")
         layout.addWidget(self.combined_upnl_label)
+
+        self.apple_upnl_label = QLabel("Apple UPnL: $0.00")
+        layout.addWidget(self.apple_upnl_label)
 
         self.close_all_button = QPushButton("Close All Pears")
         layout.addWidget(self.close_all_button)
@@ -187,12 +182,15 @@ class ControlPanel(QWidget):
             no_positions_label = QLabel("- - - - -")
             self.all_positions_layout.addWidget(no_positions_label)
 
-        # Calculate and display combined UPnL
-        combined_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
-        self.combined_upnl_label.setText(f"  Total UPnL: ${combined_upnl:.2f}")
+        # Calculate and display combined UPnL for Pears
+        combined_pear_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
+        self.combined_upnl_label.setText(f"  Pear UPnL: ${combined_pear_upnl:.2f}")
+
+        # Calculate and display combined UPnL for Apples
+        combined_apple_upnl = sum(float(position.get('unrealisedPnl', 0)) for position in all_positions if isinstance(position, dict))
+        self.apple_upnl_label.setText(f"  Apple UPnL: ${combined_apple_upnl:.2f}")
 
         # Force update of the layout
-        self.positions_label.updateGeometry()
         self.updateGeometry()
 
     def clear_layout(self, layout):
@@ -859,10 +857,8 @@ class TradingDialog(QDialog):
                 try:
                     self.current_position = json.load(f)
                 except json.JSONDecodeError:
-                    print("Warning: Invalid JSON in current_position.json. Setting current_position to an empty list.")
                     self.current_position = []
         else:
-            print("Info: current_position.json doesn't exist or is empty. Setting current_position to an empty list.")
             self.current_position = []
         return self.current_position  # Add this line to always return a list
 
