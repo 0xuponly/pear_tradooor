@@ -110,10 +110,18 @@ class ControlPanel(QWidget):
         self.close_all_button = QPushButton("Close All Pears")
         layout.addWidget(self.close_all_button)
 
-        # Add toggle trading panel button
+        # Add toggle buttons for trading panel and chart window
+        toggle_buttons_layout = QHBoxLayout()
+
         self.toggle_trading_panel_button = QPushButton("Hide Trading Panel")
         self.toggle_trading_panel_button.clicked.connect(self.toggle_trading_panel)
-        layout.addWidget(self.toggle_trading_panel_button)
+        toggle_buttons_layout.addWidget(self.toggle_trading_panel_button)
+
+        self.toggle_chart_window_button = QPushButton("Hide Chart")
+        self.toggle_chart_window_button.clicked.connect(self.toggle_chart_window)
+        toggle_buttons_layout.addWidget(self.toggle_chart_window_button)
+
+        layout.addLayout(toggle_buttons_layout)
 
         self.script_positions_label = QLabel("  Open Pears:")
         layout.addWidget(self.script_positions_label)
@@ -345,6 +353,13 @@ class ControlPanel(QWidget):
         else:
             logger.warning("Parent does not have toggle_trading_panel method")
 
+    def toggle_chart_window(self):
+        parent = self.parent()
+        if hasattr(parent, 'toggle_chart_window'):
+            parent.toggle_chart_window()
+        else:
+            logger.warning("Parent does not have toggle_chart_window method")
+
     def get_all_open_positions(self):
         try:
             positions = self.session.get_positions(
@@ -521,14 +536,29 @@ class MainWindow(QMainWindow):
     def toggle_trading_panel(self):
         if self.trading_dialog.is_closed:
             self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
+            self.position_trading_dialog()
             self.trading_dialog.show()
             self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
         elif self.trading_dialog.isVisible():
             self.trading_dialog.hide()
             self.control_panel.toggle_trading_panel_button.setText("Show Trading Panel")
         else:
+            self.position_trading_dialog()
             self.trading_dialog.show()
             self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
+
+    def position_trading_dialog(self):
+        screen = QApplication.primaryScreen().geometry()
+        self.trading_dialog.setGeometry(0, screen.height() - TRADING_DIALOG_HEIGHT, TRADING_DIALOG_WIDTH, TRADING_DIALOG_HEIGHT)
+        self.trading_dialog.move(0, screen.height() - TRADING_DIALOG_HEIGHT)
+
+    def toggle_chart_window(self):
+        if self.isVisible():
+            self.hide()
+            self.control_panel.toggle_chart_window_button.setText("Show Chart Window")
+        else:
+            self.show()
+            self.control_panel.toggle_chart_window_button.setText("Hide Chart Window")
 
 class TradingDialog(QDialog):
     def __init__(self, parent=None, symbol1="", symbol2=""):
@@ -540,9 +570,7 @@ class TradingDialog(QDialog):
         self.current_position = None  # Add this line to store the current position
         self.is_closed = False
 
-        # Set the dialog position at the bottom of the screen
-        screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(100, 100, TRADING_DIALOG_WIDTH, TRADING_DIALOG_HEIGHT)  # Increased height to accommodate new elements
+        self.setFixedSize(TRADING_DIALOG_WIDTH, TRADING_DIALOG_HEIGHT)
 
         layout = QVBoxLayout()
 
