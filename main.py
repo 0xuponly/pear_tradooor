@@ -7,7 +7,7 @@ import os
 import logging
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from config.config import TESTNET, UPDATE_INTERVAL
+from config.config import *
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QWidget, QLineEdit, QLabel, QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox, QComboBox, QSpacerItem, QSizePolicy
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.dates as mdates
@@ -28,17 +28,17 @@ load_dotenv()
 try:
     session = HTTP(
         testnet=TESTNET,
-        api_key=os.getenv("API_KEY"),
-        api_secret=os.getenv("API_SECRET")
+        api_key=os.getenv(API_KEY_ENV_VAR),
+        api_secret=os.getenv(API_SECRET_ENV_VAR)
     )
 except Exception as e:
     logger.error(f"Failed to initialize Bybit API client: {e}")
     exit(1)
 
-def get_kline_data(symbol, interval="1", limit=200):
+def get_kline_data(symbol, interval=CHART_INTERVAL, limit=CHART_LIMIT):
     try:
         return session.get_kline(
-            category="linear",
+            category=BYBIT_CATEGORY,
             symbol=symbol,
             interval=interval,
             limit=limit
@@ -51,16 +51,16 @@ def calculate_pair_price(symbol1, symbol2):
     try:
         # Get kline data for both symbols
         data1 = session.get_kline(
-            category="linear",
+            category=BYBIT_CATEGORY,
             symbol=symbol1,
-            interval=1,
-            limit=1000
+            interval=CHART_INTERVAL,
+            limit=CHART_LIMIT
         )
         data2 = session.get_kline(
-            category="linear",
+            category=BYBIT_CATEGORY,
             symbol=symbol2,
-            interval=1,
-            limit=1000
+            interval=CHART_INTERVAL,
+            limit=CHART_LIMIT
         )
         
         if data1 is None or data2 is None:
@@ -134,7 +134,7 @@ class ControlPanel(QWidget):
         self.setLayout(layout)
 
         self.set_dark_theme()
-        self.setGeometry(0, 0, 400, 200)  # x, y, width, height
+        self.setGeometry(0, 0, CONTROL_PANEL_WIDTH, CONTROL_PANEL_HEIGHT)  # x, y, width, height
 
     def set_dark_theme(self):
         self.setStyleSheet("""
@@ -292,7 +292,7 @@ class ControlPanel(QWidget):
 
     def get_current_price(self, symbol):
         try:
-            ticker = session.get_tickers(category="linear", symbol=symbol)
+            ticker = session.get_tickers(category=BYBIT_CATEGORY, symbol=symbol)
             if ticker['retCode'] == 0:
                 return float(ticker['result']['list'][0]['lastPrice'])
             else:
@@ -306,7 +306,7 @@ class ControlPanel(QWidget):
         if hasattr(self.parent(), 'trading_dialog'):
             return self.parent().trading_dialog.order_size.value()
         else:
-            return 1000  # Default value if trading dialog is not available
+            return DEFAULT_ORDER_SIZE  # Default value if trading dialog is not available
 
     def closeEvent(self, event):
         self.parent().close()
@@ -348,8 +348,8 @@ class ControlPanel(QWidget):
     def get_all_open_positions(self):
         try:
             positions = self.session.get_positions(
-                category="linear",
-                settleCoin="USDT"
+                category=BYBIT_CATEGORY,
+                settleCoin=BYBIT_SETTLE_COIN
             )
             if positions['retCode'] == 0:
                 return [pos for pos in positions['result']['list'] if float(pos['size']) > 0]
@@ -379,8 +379,8 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.chart_widget)
 
         # Initialize trading dialog with default symbols
-        self.symbol1 = "BTCUSDT"
-        self.symbol2 = "POPCATUSDT"
+        self.symbol1 = DEFAULT_SYMBOL1
+        self.symbol2 = DEFAULT_SYMBOL2
         self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
         self.trading_dialog.show()
 
@@ -397,7 +397,7 @@ class MainWindow(QMainWindow):
         # Set up a timer to refresh positions
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.refresh_positions)
-        self.refresh_timer.start(10000)  # Refresh every 10 seconds
+        self.refresh_timer.start(UPDATE_INTERVAL)  # Refresh every 10 seconds
 
         # Load position information
         self.current_position = self.load_position()
@@ -413,8 +413,8 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, 'trading_dialog'):
             screen = QApplication.primaryScreen().geometry()
-            dialog_width = 400  # Make sure this matches the width in TradingDialog
-            dialog_height = 250
+            dialog_width = TRADING_DIALOG_WIDTH  # Make sure this matches the width in TradingDialog
+            dialog_height = TRADING_DIALOG_HEIGHT
             self.trading_dialog.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
 
     def validate_symbols(self, symbol1, symbol2):
@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
             self.canvas.deleteLater()
             plt.close(self.fig)
 
-        self.fig, self.ax = plt.subplots(figsize=(12, 8))
+        self.fig, self.ax = plt.subplots(figsize=CHART_FIGSIZE)
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color: #353535;")
         self.chart_layout.addWidget(self.canvas)
@@ -503,8 +503,8 @@ class MainWindow(QMainWindow):
             self.canvas.draw()
 
     def load_position(self):
-        if os.path.exists('current_position.json') and os.path.getsize('current_position.json') > 0:
-            with open('current_position.json', 'r') as f:
+        if os.path.exists(CURRENT_POSITION_FILE) and os.path.getsize(CURRENT_POSITION_FILE) > 0:
+            with open(CURRENT_POSITION_FILE, 'r') as f:
                 try:
                     return json.load(f)
                 except json.JSONDecodeError:
@@ -542,7 +542,7 @@ class TradingDialog(QDialog):
 
         # Set the dialog position at the bottom of the screen
         screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(100, 100, 400, 200)  # Increased height to accommodate new elements
+        self.setGeometry(100, 100, TRADING_DIALOG_WIDTH, TRADING_DIALOG_HEIGHT)  # Increased height to accommodate new elements
 
         layout = QVBoxLayout()
 
@@ -579,8 +579,8 @@ class TradingDialog(QDialog):
         size_layout = QHBoxLayout()
         size_layout.addWidget(QLabel("Order Size ($):"))
         self.order_size = QDoubleSpinBox()
-        self.order_size.setRange(10, 1000000)
-        self.order_size.setValue(1000)
+        self.order_size.setRange(MIN_ORDER_SIZE, MAX_ORDER_SIZE)
+        self.order_size.setValue(DEFAULT_ORDER_SIZE)
         self.order_size.setPrefix("$")
         size_layout.addWidget(self.order_size)
         layout.addLayout(size_layout)
@@ -619,8 +619,8 @@ class TradingDialog(QDialog):
 
     def get_current_prices(self):
         try:
-            price1 = float(self.session.get_tickers(category="linear", symbol=self.symbol1)['result']['list'][0]['lastPrice'])
-            price2 = float(self.session.get_tickers(category="linear", symbol=self.symbol2)['result']['list'][0]['lastPrice'])
+            price1 = float(self.session.get_tickers(category=BYBIT_CATEGORY, symbol=self.symbol1)['result']['list'][0]['lastPrice'])
+            price2 = float(self.session.get_tickers(category=BYBIT_CATEGORY, symbol=self.symbol2)['result']['list'][0]['lastPrice'])
             return price1, price2
         except Exception as e:
             logger.error(f"Error getting current prices: {e}")
@@ -629,7 +629,7 @@ class TradingDialog(QDialog):
     def get_quantity_precision(self, symbol):
         try:
             instrument_info = self.session.get_instruments_info(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=symbol
             )
             if instrument_info['retCode'] == 0:
@@ -669,7 +669,7 @@ class TradingDialog(QDialog):
         try:
             # Short SYMBOL1
             response1 = self.session.place_order(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=self.symbol1,
                 side="Sell",
                 orderType="Market",
@@ -678,7 +678,7 @@ class TradingDialog(QDialog):
             
             # Long SYMBOL2
             response2 = self.session.place_order(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=self.symbol2,
                 side="Buy",
                 orderType="Market",
@@ -730,7 +730,7 @@ class TradingDialog(QDialog):
         try:
             # Long SYMBOL1
             response1 = self.session.place_order(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=self.symbol1,
                 side="Buy",
                 orderType="Market",
@@ -739,7 +739,7 @@ class TradingDialog(QDialog):
             
             # Short SYMBOL2
             response2 = self.session.place_order(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=self.symbol2,
                 side="Sell",
                 orderType="Market",
@@ -786,7 +786,7 @@ class TradingDialog(QDialog):
                     if symbol not in ['type', 'timestamp', 'timestamp_rounded'] and isinstance(pos_data, dict):
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                         response = self.session.place_order(
-                            category="linear",
+                            category=BYBIT_CATEGORY,
                             symbol=symbol,
                             side=close_side,
                             orderType="Market",
@@ -814,7 +814,7 @@ class TradingDialog(QDialog):
                         if float(pos_data['qty']) > 0:  # Only close if there's an open position
                             close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
                             response = self.session.place_order(
-                                category="linear",
+                                category=BYBIT_CATEGORY,
                                 symbol=symbol,
                                 side=close_side,
                                 orderType="Market",
@@ -845,15 +845,15 @@ class TradingDialog(QDialog):
 
     def save_position(self):
         if self.current_position:
-            with open('current_position.json', 'w') as f:
+            with open(CURRENT_POSITION_FILE, 'w') as f:
                 json.dump(self.current_position, f)
         else:
-            if os.path.exists('current_position.json'):
-                os.remove('current_position.json')
+            if os.path.exists(CURRENT_POSITION_FILE):
+                os.remove(CURRENT_POSITION_FILE)
 
     def load_position(self):
-        if os.path.exists('current_position.json') and os.path.getsize('current_position.json') > 0:
-            with open('current_position.json', 'r') as f:
+        if os.path.exists(CURRENT_POSITION_FILE) and os.path.getsize(CURRENT_POSITION_FILE) > 0:
+            with open(CURRENT_POSITION_FILE, 'r') as f:
                 try:
                     self.current_position = json.load(f)
                 except json.JSONDecodeError:
@@ -897,9 +897,9 @@ class TradingDialog(QDialog):
         timestamp = datetime.now().isoformat()
         log_entry = f"{timestamp},{trade_id},{trade_type},{symbol1},{qty1},{price1},{symbol2},{qty2},{price2}\n"
         
-        file_exists = os.path.exists('trade_log.csv')
+        file_exists = os.path.exists(TRADE_LOG_FILE)
         
-        with open('trade_log.csv', 'a') as f:
+        with open(TRADE_LOG_FILE, 'a') as f:
             if not file_exists:
                 f.write("timestamp,trade_id,trade_type,symbol1,qty1,price1,symbol2,qty2,price2\n")  # Write header
             f.write(log_entry)
