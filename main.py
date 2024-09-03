@@ -16,6 +16,7 @@ import json
 from PyQt5.QtGui import QPalette, QColor
 from datetime import datetime
 import uuid
+from trading_api.bybit_api_client import BybitAPIClient
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,42 +27,23 @@ load_dotenv()
 
 # Initialize the Bybit API client
 try:
-    session = HTTP(
-        testnet=TESTNET,
+    bybit_client = BybitAPIClient(
         api_key=os.getenv(API_KEY_ENV_VAR),
-        api_secret=os.getenv(API_SECRET_ENV_VAR)
+        api_secret=os.getenv(API_SECRET_ENV_VAR),
+        testnet=TESTNET
     )
 except Exception as e:
     logger.error(f"Failed to initialize Bybit API client: {e}")
     exit(1)
 
 def get_kline_data(symbol, interval=CHART_INTERVAL, limit=CHART_LIMIT):
-    try:
-        return session.get_kline(
-            category=BYBIT_CATEGORY,
-            symbol=symbol,
-            interval=interval,
-            limit=limit
-        )
-    except Exception as e:
-        logger.error(f"Error getting kline data for {symbol}: {e}")
-        return None
+    return bybit_client.get_kline_data(symbol, interval, limit)
 
 def calculate_pair_price(symbol1, symbol2):
     try:
         # Get kline data for both symbols
-        data1 = session.get_kline(
-            category=BYBIT_CATEGORY,
-            symbol=symbol1,
-            interval=CHART_INTERVAL,
-            limit=CHART_LIMIT
-        )
-        data2 = session.get_kline(
-            category=BYBIT_CATEGORY,
-            symbol=symbol2,
-            interval=CHART_INTERVAL,
-            limit=CHART_LIMIT
-        )
+        data1 = get_kline_data(symbol1)
+        data2 = get_kline_data(symbol2)
         
         if data1 is None or data2 is None:
             return None
@@ -94,7 +76,7 @@ class ControlPanel(QWidget):
         super().__init__(parent, Qt.Window)
         self.setWindowTitle("Pear Tradooor - Control Panel")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
-        self.session = session  # Add this line to use the global session object
+        self.bybit_client = parent.bybit_client  # Add this line to use the Bybit API client
 
         layout = QVBoxLayout()
 
@@ -155,6 +137,7 @@ class ControlPanel(QWidget):
                 color: white;
                 border: none;
                 padding: 5px;
+                
             }
             QPushButton:hover {
                 background-color: #3A92EA;
@@ -183,6 +166,14 @@ class ControlPanel(QWidget):
 
         # Update all positions
         all_positions = self.get_all_open_positions()
+        if all_positions is None:
+            # Handle the case when all_positions is None
+            self.positions_text.set_text("No positions data available")
+            return
+
+        combined_apple_upnl = sum(float(position.get('unrealisedPnl', 0)) for position in all_positions if isinstance(position, dict))
+        self.apple_upnl_label.setText(f"  Apple UPnL: ${combined_apple_upnl:.2f}")
+
         if all_positions:
             for index, position in enumerate(all_positions):
                 self.add_position_to_layout(position, index, self.all_positions_layout, is_script_position=False)
@@ -193,10 +184,6 @@ class ControlPanel(QWidget):
         # Calculate and display combined UPnL for Pears
         combined_pear_upnl = sum(position.get('combined_upnl', 0) for position in positions if isinstance(position, dict))
         self.combined_upnl_label.setText(f"  Pear UPnL: ${combined_pear_upnl:.2f}")
-
-        # Calculate and display combined UPnL for Apples
-        combined_apple_upnl = sum(float(position.get('unrealisedPnl', 0)) for position in all_positions if isinstance(position, dict))
-        self.apple_upnl_label.setText(f"  Apple UPnL: ${combined_apple_upnl:.2f}")
 
         # Force update of the layout
         self.updateGeometry()
@@ -300,7 +287,7 @@ class ControlPanel(QWidget):
 
     def get_current_price(self, symbol):
         try:
-            ticker = session.get_tickers(category=BYBIT_CATEGORY, symbol=symbol)
+            ticker = self.bybit_client.get_tickers(category=BYBIT_CATEGORY, symbol=symbol)
             if ticker['retCode'] == 0:
                 return float(ticker['result']['list'][0]['lastPrice'])
             else:
@@ -328,7 +315,7 @@ class ControlPanel(QWidget):
 
     def get_account_info(self):
         try:
-            account_info = self.session.get_wallet_balance(accountType="UNIFIED")
+            account_info = self.bybit_client.get_wallet_balance(accountType="UNIFIED")
             if account_info['retCode'] == 0:
                 wallet_info = account_info['result']['list'][0]
                 total_equity = float(wallet_info['totalEquity'])
@@ -362,7 +349,7 @@ class ControlPanel(QWidget):
 
     def get_all_open_positions(self):
         try:
-            positions = self.session.get_positions(
+            positions = self.bybit_client.get_positions(
                 category=BYBIT_CATEGORY,
                 settleCoin=BYBIT_SETTLE_COIN
             )
@@ -380,6 +367,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Pear Tradooor - Chart")
         screen = QApplication.primaryScreen().geometry()
+
+        # Initialize the bybit_client before creating the ControlPanel
+        self.bybit_client = self.initialize_bybit_client()
+
         self.control_panel = ControlPanel(self)
         control_panel_width = self.control_panel.width()
         self.setGeometry(control_panel_width, 0, screen.width() - control_panel_width, screen.height())
@@ -417,6 +408,12 @@ class MainWindow(QMainWindow):
         # Load position information
         self.current_position = self.load_position()
         self.refresh_positions()
+
+    def initialize_bybit_client(self):
+        # Initialize the Bybit API client with the API key and secret from environment variables
+        api_key = os.getenv(API_KEY_ENV_VAR)
+        api_secret = os.getenv(API_SECRET_ENV_VAR)
+        return BybitAPIClient(api_key, api_secret)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -566,7 +563,7 @@ class TradingDialog(QDialog):
         self.setWindowTitle("Pear Tradooor - Trading Panel")
         self.symbol1 = symbol1
         self.symbol2 = symbol2
-        self.session = session  # Use the global session object
+        self.bybit_client = parent.bybit_client  # Use the Bybit API client from the parent
         self.current_position = None  # Add this line to store the current position
         self.is_closed = False
 
@@ -646,28 +643,10 @@ class TradingDialog(QDialog):
         """)
 
     def get_current_prices(self):
-        try:
-            price1 = float(self.session.get_tickers(category=BYBIT_CATEGORY, symbol=self.symbol1)['result']['list'][0]['lastPrice'])
-            price2 = float(self.session.get_tickers(category=BYBIT_CATEGORY, symbol=self.symbol2)['result']['list'][0]['lastPrice'])
-            return price1, price2
-        except Exception as e:
-            logger.error(f"Error getting current prices: {e}")
-            return None, None
+        return self.bybit_client.get_current_prices(self.symbol1, self.symbol2)
 
     def get_quantity_precision(self, symbol):
-        try:
-            instrument_info = self.session.get_instruments_info(
-                category=BYBIT_CATEGORY,
-                symbol=symbol
-            )
-            if instrument_info['retCode'] == 0:
-                for instrument in instrument_info['result']['list']:
-                    if instrument['symbol'] == symbol:
-                        return instrument['lotSizeFilter']['qtyStep'].index('1') - 1
-            return 8  # Default to 8 decimal places if not found
-        except Exception as e:
-            logger.error(f"Error getting quantity precision for {symbol}: {e}")
-            return 8  # Default to 8 decimal places on error
+        return self.bybit_client.get_quantity_precision(symbol)
 
     def calculate_quantities(self, price1, price2):
         total_order_size = self.order_size.value()
@@ -695,20 +674,18 @@ class TradingDialog(QDialog):
         print(f"{'Long' if direction == 'long' else 'Short'} {self.symbol2}: {qty2:.8f} ({dollar_value2:.2f} USD)")
 
         try:
-            response1 = self.session.place_order(
-                category=BYBIT_CATEGORY,
+            response1 = self.bybit_client.place_order(
                 symbol=self.symbol1,
                 side="Sell" if direction == "long" else "Buy",
-                orderType="Market",
-                qty=str(qty1)
+                order_type="Market",
+                qty=qty1
             )
             
-            response2 = self.session.place_order(
-                category=BYBIT_CATEGORY,
+            response2 = self.bybit_client.place_order(
                 symbol=self.symbol2,
                 side="Buy" if direction == "long" else "Sell",
-                orderType="Market",
-                qty=str(qty2)
+                order_type="Market",
+                qty=qty2
             )
             
             if response1['retCode'] == 0 and response2['retCode'] == 0:
@@ -756,13 +733,12 @@ class TradingDialog(QDialog):
                 for symbol, pos_data in position.items():
                     if symbol not in ['type', 'timestamp', 'timestamp_rounded'] and isinstance(pos_data, dict):
                         close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
-                        response = self.session.place_order(
-                            category=BYBIT_CATEGORY,
+                        response = self.bybit_client.place_order(
                             symbol=symbol,
                             side=close_side,
-                            orderType="Market",
-                            qty=str(pos_data['qty']),
-                            reduceOnly=True
+                            order_type="Market",
+                            qty=pos_data['qty'],
+                            reduce_only=True
                         )
                         print(f"Close position response for {symbol}: {response}")
         
@@ -784,13 +760,12 @@ class TradingDialog(QDialog):
                     if symbol not in ['type', 'timestamp', 'timestamp_rounded', 'combined_upnl', 'trade_id'] and isinstance(pos_data, dict):
                         if float(pos_data['qty']) > 0:  # Only close if there's an open position
                             close_side = "Buy" if pos_data['side'] == "Sell" else "Sell"
-                            response = self.session.place_order(
-                                category=BYBIT_CATEGORY,
+                            response = self.bybit_client.place_order(
                                 symbol=symbol,
                                 side=close_side,
-                                orderType="Market",
-                                qty=str(pos_data['qty']),
-                                reduceOnly=True
+                                order_type="Market",
+                                qty=pos_data['qty'],
+                                reduce_only=True
                             )
                             print(f"Close position response for {symbol}: {response}")
                         else:
