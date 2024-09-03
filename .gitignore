@@ -5,3 +5,4 @@ __pycache__/
 current_position.json
 trade_log.csv
 
+.DS_Store
