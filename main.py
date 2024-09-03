@@ -561,6 +561,7 @@ class TradingDialog(QDialog):
     def __init__(self, parent=None, symbol1="", symbol2=""):
         super().__init__(parent)
         self.setWindowTitle("Pear Tradooor - Trading Panel")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.symbol1 = symbol1
         self.symbol2 = symbol2
         self.bybit_client = parent.bybit_client  # Use the Bybit API client from the parent
