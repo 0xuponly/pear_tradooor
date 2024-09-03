@@ -83,14 +83,11 @@ class ControlPanel(QWidget):
         self.account_info_label = QLabel("Account Balance: $0.00")
         layout.addWidget(self.account_info_label)
 
-        self.combined_upnl_label = QLabel("Total UPnL: $0.00")
+        self.combined_upnl_label = QLabel("Pear UPnL: $0.00")
         layout.addWidget(self.combined_upnl_label)
 
         self.apple_upnl_label = QLabel("Apple UPnL: $0.00")
         layout.addWidget(self.apple_upnl_label)
-
-        self.close_all_button = QPushButton("Close All Pears")
-        layout.addWidget(self.close_all_button)
 
         # Add toggle buttons for trading panel and chart window
         toggle_buttons_layout = QHBoxLayout()
@@ -112,6 +109,9 @@ class ControlPanel(QWidget):
         script_positions_widget = QWidget()
         script_positions_widget.setLayout(self.script_positions_layout)
         layout.addWidget(script_positions_widget)
+
+        self.close_all_button = QPushButton("Close All Pears")
+        layout.addWidget(self.close_all_button)
 
         self.all_positions_label = QLabel("  Open Apples:")
         layout.addWidget(self.all_positions_label)
