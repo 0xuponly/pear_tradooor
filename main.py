@@ -680,7 +680,7 @@ class TradingDialog(QDialog):
     def calculate_dollar_value(self, quantity, price):
         return quantity * price
 
-    def long_pair(self):
+    def place_pair_order(self, direction):
         price1, price2 = self.get_current_prices()
         if price1 is None or price2 is None:
             QMessageBox.warning(self, "Error", "Failed to get current prices.")
@@ -690,25 +690,23 @@ class TradingDialog(QDialog):
         dollar_value1 = self.calculate_dollar_value(qty1, price1)
         dollar_value2 = self.calculate_dollar_value(qty2, price2)
 
-        print(f"Long Pair Order:")
-        print(f"Short {self.symbol1}: {qty1:.8f} ({dollar_value1:.2f} USD)")
-        print(f"Long {self.symbol2}: {qty2:.8f} ({dollar_value2:.2f} USD)")
+        print(f"{direction.capitalize()} Pair Order:")
+        print(f"{'Short' if direction == 'long' else 'Long'} {self.symbol1}: {qty1:.8f} ({dollar_value1:.2f} USD)")
+        print(f"{'Long' if direction == 'long' else 'Short'} {self.symbol2}: {qty2:.8f} ({dollar_value2:.2f} USD)")
 
         try:
-            # Short SYMBOL1
             response1 = self.session.place_order(
                 category=BYBIT_CATEGORY,
                 symbol=self.symbol1,
-                side="Sell",
+                side="Sell" if direction == "long" else "Buy",
                 orderType="Market",
                 qty=str(qty1)
             )
             
-            # Long SYMBOL2
             response2 = self.session.place_order(
                 category=BYBIT_CATEGORY,
                 symbol=self.symbol2,
-                side="Buy",
+                side="Buy" if direction == "long" else "Sell",
                 orderType="Market",
                 qty=str(qty2)
             )
@@ -716,13 +714,13 @@ class TradingDialog(QDialog):
             if response1['retCode'] == 0 and response2['retCode'] == 0:
                 trade_id = self.generate_trade_id()
                 new_position = {
-                    'type': 'long',
+                    'type': direction,
                     'trade_id': trade_id,
                     'timestamp': datetime.now().isoformat(),
                     'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
                     'combined_upnl': 0,
-                    self.symbol1: {'side': 'Sell', 'qty': qty1, 'entry_price': price1},
-                    self.symbol2: {'side': 'Buy', 'qty': qty2, 'entry_price': price2}
+                    self.symbol1: {'side': 'Sell' if direction == 'long' else 'Buy', 'qty': qty1, 'entry_price': price1},
+                    self.symbol2: {'side': 'Buy' if direction == 'long' else 'Sell', 'qty': qty2, 'entry_price': price2}
                 }
                 
                 if self.current_position is None:
@@ -731,76 +729,21 @@ class TradingDialog(QDialog):
                     self.current_position.append(new_position)
                 
                 self.save_position()
-                self.log_trade('LONG', self.symbol1, self.symbol2, qty1, qty2, price1, price2, trade_id)
+                self.log_trade(direction.upper(), self.symbol1, self.symbol2, qty1, qty2, price1, price2, trade_id)
                 self.parent().refresh_positions()  # Refresh the positions display
-                QMessageBox.information(self, "Success", "Long pair order placed successfully.")
+                QMessageBox.information(self, "Success", f"{direction.capitalize()} pair order placed successfully.")
             else:
-                error_msg = f"Failed to place long pair order:\n{self.symbol1}: {response1['retMsg']}\n{self.symbol2}: {response2['retMsg']}"
+                error_msg = f"Failed to place {direction} pair order:\n{self.symbol1}: {response1['retMsg']}\n{self.symbol2}: {response2['retMsg']}"
                 QMessageBox.warning(self, "Error", error_msg)
         except Exception as e:
-            logger.error(f"Error placing long pair order: {e}")
-            QMessageBox.warning(self, "Error", f"Failed to place long pair order: {e}")
+            logger.error(f"Error placing {direction} pair order: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to place {direction} pair order: {e}")
+
+    def long_pair(self):
+        self.place_pair_order("long")
 
     def short_pair(self):
-        price1, price2 = self.get_current_prices()
-        if price1 is None or price2 is None:
-            QMessageBox.warning(self, "Error", "Failed to get current prices.")
-            return
-
-        qty1, qty2 = self.calculate_quantities(price1, price2)
-        dollar_value1 = self.calculate_dollar_value(qty1, price1)
-        dollar_value2 = self.calculate_dollar_value(qty2, price2)
-
-        print(f"Short Pair Order:")
-        print(f"Long {self.symbol1}: {qty1:.8f} ({dollar_value1:.2f} USD)")
-        print(f"Short {self.symbol2}: {qty2:.8f} ({dollar_value2:.2f} USD)")
-
-        try:
-            # Long SYMBOL1
-            response1 = self.session.place_order(
-                category=BYBIT_CATEGORY,
-                symbol=self.symbol1,
-                side="Buy",
-                orderType="Market",
-                qty=str(qty1)
-            )
-            
-            # Short SYMBOL2
-            response2 = self.session.place_order(
-                category=BYBIT_CATEGORY,
-                symbol=self.symbol2,
-                side="Sell",
-                orderType="Market",
-                qty=str(qty2)
-            )
-            
-            if response1['retCode'] == 0 and response2['retCode'] == 0:
-                trade_id = self.generate_trade_id()
-                new_position = {
-                    'type': 'short',
-                    'trade_id': trade_id,
-                    'timestamp': datetime.now().isoformat(),
-                    'timestamp_rounded': datetime.now().replace(second=0, microsecond=0).isoformat(),
-                    'combined_upnl': 0,
-                    self.symbol1: {'side': 'Buy', 'qty': qty1, 'entry_price': price1},
-                    self.symbol2: {'side': 'Sell', 'qty': qty2, 'entry_price': price2}
-                }
-                
-                if self.current_position is None:
-                    self.current_position = [new_position]
-                else:
-                    self.current_position.append(new_position)
-                
-                self.save_position()
-                self.log_trade('SHORT', self.symbol1, self.symbol2, qty1, qty2, price1, price2, trade_id)
-                self.parent().refresh_positions()  # Refresh the positions display
-                QMessageBox.information(self, "Success", "Short pair order placed successfully.")
-            else:
-                error_msg = f"Failed to place short pair order:\n{self.symbol1}: {response1['retMsg']}\n{self.symbol2}: {response2['retMsg']}"
-                QMessageBox.warning(self, "Error", error_msg)
-        except Exception as e:
-            logger.error(f"Error placing short pair order: {e}")
-            QMessageBox.warning(self, "Error", f"Failed to place short pair order: {e}")
+        self.place_pair_order("short")
 
     def close_all_positions(self):
         self.load_position()  # Reload the position in case it was opened in a previous session
