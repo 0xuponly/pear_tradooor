@@ -16,7 +16,7 @@ import json
 from PyQt5.QtGui import QPalette, QColor
 from datetime import datetime
 import uuid
-from trading_api.bybit_api_client import BybitAPIClient
+from trading_api.bybit_api import BybitAPIClient
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -288,10 +288,10 @@ class ControlPanel(QWidget):
     def get_current_price(self, symbol):
         try:
             ticker = self.bybit_client.get_tickers(category=BYBIT_CATEGORY, symbol=symbol)
-            if ticker['retCode'] == 0:
+            if ticker and ticker['retCode'] == 0:
                 return float(ticker['result']['list'][0]['lastPrice'])
             else:
-                logger.error(f"Error getting current price for {symbol}: {ticker['retMsg']}")
+                logger.error(f"Error getting current price for {symbol}: {ticker['retMsg'] if ticker else 'No response'}")
                 return None
         except Exception as e:
             logger.error(f"Error getting current price for {symbol}: {e}")
@@ -316,12 +316,12 @@ class ControlPanel(QWidget):
     def get_account_info(self):
         try:
             account_info = self.bybit_client.get_wallet_balance(accountType="UNIFIED")
-            if account_info['retCode'] == 0:
+            if account_info and account_info['retCode'] == 0:
                 wallet_info = account_info['result']['list'][0]
                 total_equity = float(wallet_info['totalEquity'])
                 return total_equity
             else:
-                logger.error(f"Error getting account info: {account_info['retMsg']}")
+                logger.error(f"Error getting account info: {account_info['retMsg'] if account_info else 'No response'}")
                 return None
         except Exception as e:
             logger.error(f"Error getting account info: {e}")
@@ -353,10 +353,10 @@ class ControlPanel(QWidget):
                 category=BYBIT_CATEGORY,
                 settleCoin=BYBIT_SETTLE_COIN
             )
-            if positions['retCode'] == 0:
+            if positions and positions['retCode'] == 0:
                 return [pos for pos in positions['result']['list'] if float(pos['size']) > 0]
             else:
-                logger.error(f"Error getting all open positions: {positions['retMsg']}")
+                logger.error(f"Error getting all open positions: {positions['retMsg'] if positions else 'No response'}")
                 return None
         except Exception as e:
             logger.error(f"Error getting all open positions: {e}")
@@ -688,7 +688,7 @@ class TradingDialog(QDialog):
                 qty=qty2
             )
             
-            if response1['retCode'] == 0 and response2['retCode'] == 0:
+            if response1 and response1['retCode'] == 0 and response2 and response2['retCode'] == 0:
                 trade_id = self.generate_trade_id()
                 new_position = {
                     'type': direction,
