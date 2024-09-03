@@ -256,11 +256,11 @@ class ControlPanel(QWidget):
                     # Get current price
                     current_price = self.get_current_price(symbol)
                     
-                    # Calculate initial position value
-                    initial_position_value = qty * entry_price
-                    
                     # Calculate dollar value using current price
                     dollar_value = qty * current_price if current_price else 0
+
+                    # Calculate initial position value
+                    initial_position_value = dollar_value - unrealised_pnl
                     
                     # Calculate percentage UPNL
                     order_size = self.get_order_size()
@@ -269,7 +269,7 @@ class ControlPanel(QWidget):
                     # Truncate symbol
                     symbol_truncated = symbol[:-4] if symbol.endswith(('USDT', 'USDC')) else symbol
                     
-                    position_text = f"{'LONG' if side == 'Buy' else 'SHORT'} ${dollar_value:.2f} {symbol_truncated} ${unrealised_pnl:.2f} {upnl_percentage:.2f}%"
+                    position_text = f"{'L' if side == 'Buy' else 'S'} ${initial_position_value:.2f} {symbol_truncated} ${unrealised_pnl:.2f} {upnl_percentage:.2f}%"
                     
                     position_widget = QWidget()
                     position_layout = QHBoxLayout(position_widget)
