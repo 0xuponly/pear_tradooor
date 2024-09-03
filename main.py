@@ -326,6 +326,7 @@ class ControlPanel(QWidget):
         except Exception as e:
             logger.error(f"Error getting account info: {e}")
             return None
+        
     def update_account_info(self):
         total_equity = self.get_account_info()
         if total_equity is not None:
