@@ -16,7 +16,7 @@ class BybitAPIClient:
     def get_kline_data(self, symbol, interval, limit):
         try:
             response = self.session.get_kline(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=symbol,
                 interval=interval,
                 limit=limit
@@ -50,7 +50,7 @@ class BybitAPIClient:
     def place_order(self, symbol, side, order_type, qty, reduce_only=False):
         try:
             return self.session.place_order(
-                category="linear",
+                category=BYBIT_CATEGORY,
                 symbol=symbol,
                 side=side,
                 orderType=order_type,
