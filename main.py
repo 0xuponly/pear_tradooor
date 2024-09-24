@@ -564,21 +564,22 @@ class MainWindow(QMainWindow):
     def toggle_trading_panel(self):
         if self.trading_dialog.is_closed:
             self.trading_dialog = TradingDialog(self, self.symbol1, self.symbol2)
-            self.position_trading_dialog()
             self.trading_dialog.show()
+            self.position_trading_dialog()
             self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
         elif self.trading_dialog.isVisible():
             self.trading_dialog.hide()
             self.control_panel.toggle_trading_panel_button.setText("Show Trading Panel")
         else:
-            self.position_trading_dialog()
             self.trading_dialog.show()
+            self.position_trading_dialog()
             self.control_panel.toggle_trading_panel_button.setText("Hide Trading Panel")
 
     def position_trading_dialog(self):
         screen = QApplication.primaryScreen().geometry()
-        self.trading_dialog.setGeometry(0, screen.height() - TRADING_DIALOG_HEIGHT, TRADING_DIALOG_WIDTH, TRADING_DIALOG_HEIGHT)
-        self.trading_dialog.move(0, screen.height() - TRADING_DIALOG_HEIGHT)
+        dialog_width = TRADING_DIALOG_WIDTH  # Make sure this matches the width in TradingDialog
+        dialog_height = TRADING_DIALOG_HEIGHT
+        self.trading_dialog.setGeometry(screen.left(), screen.bottom() - dialog_height, dialog_width, dialog_height)
 
     def toggle_chart_window(self):
         if self.isVisible():
