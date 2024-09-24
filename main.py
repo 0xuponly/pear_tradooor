@@ -1,7 +1,6 @@
 from pybit.unified_trading import HTTP
 import pandas as pd
 import numpy as np
-import statsmodels.api as sm
 from dotenv import load_dotenv
 import os
 import logging
@@ -26,30 +25,54 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Initialize the Bybit API client
-try:
-    bybit_client = BybitAPIClient(
-        api_key=os.getenv(API_KEY_ENV_VAR),
-        api_secret=os.getenv(API_SECRET_ENV_VAR),
-        testnet=TESTNET
-    )
-except Exception as e:
-    logger.error(f"Failed to initialize Bybit API client: {e}")
-    exit(1)
+if TESTNET:
+    try:
+        bybit_client = BybitAPIClient(
+            api_key=os.getenv("API_KEY_TESTNET"),
+            api_secret=os.getenv("API_SECRET_TESTNET"),
+            testnet=TESTNET
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Bybit API client: {e}")
+        exit(1)
+else:
+    try:
+        bybit_client = BybitAPIClient(
+            api_key=os.getenv("API_KEY"),
+            api_secret=os.getenv("API_SECRET"),
+            testnet=TESTNET
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Bybit API client: {e}")
+        exit(1)
 
 def get_kline_data(symbol, interval=CHART_INTERVAL, limit=CHART_LIMIT):
-    return bybit_client.get_kline_data(symbol, interval, limit)
+    response = bybit_client.get_kline_data(symbol, interval, limit)
+    if response is None or response.get('retCode') != 0:
+        logger.error(f"Error getting kline data for {symbol}: {response.get('retMsg', 'No response')}")
+        return None
+    return response
 
 def calculate_pair_price(symbol1, symbol2):
     try:
-        # Get kline data for both symbols
         data1 = get_kline_data(symbol1)
         data2 = get_kline_data(symbol2)
         
         if data1 is None or data2 is None:
+            logger.error("Received None for kline data.")
             return None
         
-        df1 = pd.DataFrame(data1['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-        df2 = pd.DataFrame(data2['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+        if 'result' in data1 and 'list' in data1['result']:
+            df1 = pd.DataFrame(data1['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+        else:
+            logger.error("Invalid data structure for data1.")
+            return None
+        
+        if 'result' in data2 and 'list' in data2['result']:
+            df2 = pd.DataFrame(data2['result']['list'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+        else:
+            logger.error("Invalid data structure for data2.")
+            return None
         
         df1['close'] = df1['close'].astype(float)
         df2['close'] = df2['close'].astype(float)
@@ -69,6 +92,7 @@ def calculate_pair_price(symbol1, symbol2):
         return pair_price
     except Exception as e:
         logger.error(f"Error calculating pair price: {e}")
+        logger.debug(f"Data1: {data1}, Data2: {data2}")  # Log the data for debugging
         return None
 
 class ControlPanel(QWidget):
@@ -77,6 +101,7 @@ class ControlPanel(QWidget):
         self.setWindowTitle("Pear Tradooor - Control Panel")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.bybit_client = parent.bybit_client  # Add this line to use the Bybit API client
+        self.positions_text = None  # Initialize positions_text
 
         layout = QVBoxLayout()
 
@@ -168,7 +193,8 @@ class ControlPanel(QWidget):
         all_positions = self.get_all_open_positions()
         if all_positions is None:
             # Handle the case when all_positions is None
-            self.positions_text.set_text("No positions data available")
+            if self.positions_text is not None:
+                self.positions_text.set_text("No positions data available")
             return
 
         combined_apple_upnl = sum(float(position.get('unrealisedPnl', 0)) for position in all_positions if isinstance(position, dict))
@@ -412,8 +438,12 @@ class MainWindow(QMainWindow):
 
     def initialize_bybit_client(self):
         # Initialize the Bybit API client with the API key and secret from environment variables
-        api_key = os.getenv(API_KEY_ENV_VAR)
-        api_secret = os.getenv(API_SECRET_ENV_VAR)
+        if TESTNET:
+            api_key = os.getenv("API_KEY_TESTNET")
+            api_secret = os.getenv("API_SECRET_TESTNET")
+        else:
+            api_key = os.getenv("API_KEY")
+            api_secret = os.getenv("API_SECRET")
         return BybitAPIClient(api_key, api_secret)
 
     def showEvent(self, event):
@@ -453,7 +483,7 @@ class MainWindow(QMainWindow):
     def update_chart(self, frame):
         pair_price = calculate_pair_price(self.symbol1, self.symbol2)
         positions = self.trading_dialog.current_position if hasattr(self, 'trading_dialog') else []
-        if pair_price is not None and not pair_price.empty:
+        if pair_price is not None:
             self.ax.clear()
             self.ax.plot(pair_price.index, pair_price.values, color='#2A82DA')
             symbol1_truncated = self.symbol1[:-4] if self.symbol1.endswith(('USDT', 'USDC')) else self.symbol1
