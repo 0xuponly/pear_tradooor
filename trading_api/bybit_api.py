@@ -1,12 +1,12 @@
 from pybit.unified_trading import HTTP
 import logging
 from requests import Session
-from config.config import BYBIT_CATEGORY, BYBIT_SETTLE_COIN
+from config.config import *
 
 logger = logging.getLogger(__name__)
 
 class BybitAPIClient:
-    def __init__(self, api_key, api_secret, testnet=False):
+    def __init__(self, api_key, api_secret, testnet=TESTNET):
         self.session = HTTP(
             testnet=testnet,
             api_key=api_key,
